@@ -1,0 +1,36 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node / frontend
+node_modules/
+npm-debug.log*
+
+# Editors
+.vscode/
+.idea/
+
+# Local runtime artifacts
+*.log
+tmp/
+temp/
+*.sqlite3
+
+# Notebook checkpoints
+notebooks/.ipynb_checkpoints/

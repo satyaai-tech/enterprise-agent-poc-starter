@@ -1,0 +1,24 @@
+# Local environment and generated files
+.DS_Store
+.env
+.env.*
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+tmp/
+temp/
+
+# Tooling caches
+node_modules/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Notebooks
+notebooks/.ipynb_checkpoints/
+
+# Editor metadata
+.vscode/
+.idea/

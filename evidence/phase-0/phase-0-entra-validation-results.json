@@ -1,0 +1,20 @@
+{
+  "agent_a": {
+    "error_category": "NONE",
+    "result": "PASS"
+  },
+  "agent_a_as_b_negative": {
+    "actual_outcome": "FAIL",
+    "error_category": "INVALID_AUDIENCE",
+    "expected_outcome": "FAIL",
+    "pass": true,
+    "test_name": "agent_a_as_agent_b_negative"
+  },
+  "agent_b": {
+    "error_category": "INVALID_AUDIENCE",
+    "result": "FAIL"
+  },
+  "source": "live-local",
+  "status": "FAIL",
+  "timestamp_utc": "2026-10-08T22:23:33.441851+00:00"
+}
