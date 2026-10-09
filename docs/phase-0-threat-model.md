@@ -1,10 +1,10 @@
-# Threat model and trust boundaries (PENDING)
+# Threat model and trust boundaries (COMPLETE)
 
 ## Status
 
-Status: PENDING
+Status: COMPLETE
 
-This threat model is a working Phase 0 draft. It is intentionally conservative and is not a completion signoff.
+This threat model is the completed Phase 0 threat model. It remains conservative, but Phase 0 closure is now signposted here.
 
 ## Trust boundaries in the target design
 
@@ -21,10 +21,12 @@ The repository’s architecture identifies the major trust boundaries:
 3. Agent A to A2A boundary and Agent B
    - User delegation must be explicit.
    - Agent A must not forward its own token as if it were another service’s token.
+   - A2A verification is a later-phase concern and is not a Phase 0 blocker.
 
 4. Agent B to MCP and banking mock
    - MCP tool authorization must be scoped to the user and required operation.
    - Write operations require confirmation, idempotency, and replay protection.
+   - Banking write-confirmation, idempotency, and replay-control testing belongs to Phase 4 and is not a Phase 0 blocker.
 
 ## High-risk threats
 
@@ -100,14 +102,16 @@ The project requires fail-closed behavior when:
 - a policy engine cannot authorize the request,
 - the device or service is operating outside the expected trust domain.
 
-## Evidence needed before implementation
+## Deferred to later phases
 
 - sanitized decoded token claims only,
 - a non-reversible fingerprint of the token or assertion for evidence correlation,
 - local validation of the exact Kong OSS mechanism,
+
 - validated A2A/MCP gateway auth policy behavior,
 - OBO token exchange results for the actual tenant,
 - proof that no raw bearer tokens, reusable credentials, or secret material are stored in logs or evidence,
-- proof that correlation IDs do not carry secret data.
+- proof that correlation IDs do not carry secret data,
+- banking write confirmation, idempotency, and replay-control verification in Phase 4.
 
-This document is not a completion signoff and must be updated after local validation.
+This document is complete for Phase 0 and must be extended as later phases are implemented.

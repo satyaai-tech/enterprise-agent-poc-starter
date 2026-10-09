@@ -1,0 +1,55 @@
+name: phase0-external-authorizer-spike
+
+services:
+  kong:
+    image: kong:3.9.3
+    command: kong docker-start
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: off
+      KONG_LOG_LEVEL: warn
+    volumes:
+      - ./kong/kong.yml:/kong/kong.yml:ro
+    ports:
+      - "${KONG_HOST_PORT:-8080}:8000"
+    depends_on:
+      validation-proxy:
+        condition: service_started
+
+  validation-proxy:
+    build:
+      context: ../../../../
+      dockerfile: infra/kong/spikes/external-authorizer/proxy/Dockerfile
+    environment:
+      SPIKE_TENANT_ID: ${SPIKE_TENANT_ID}
+      SPIKE_EXPECTED_AUDIENCE: ${SPIKE_EXPECTED_AUDIENCE}
+      SPIKE_EXPECTED_SCOPE: ${SPIKE_EXPECTED_SCOPE}
+      SPIKE_EXPECTED_AUTHORIZED_CLIENT: ${SPIKE_EXPECTED_AUTHORIZED_CLIENT}
+      SPIKE_OPENID_CONFIGURATION_PATH: /fixtures/openid-configuration.json
+      SPIKE_JWKS_PATH: /fixtures/jwks.json
+      SPIKE_EVIDENCE_DIR: /evidence
+      SPIKE_UPSTREAM_URL: http://mock-agent-a:9001/agent-a
+    volumes:
+      - ${SPIKE_FIXTURE_DIR}:/fixtures:ro
+      - ${SPIKE_EVIDENCE_DIR}:/evidence
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health', timeout=2).read()"]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+
+  mock-agent-a:
+    build:
+      context: ../../../../
+      dockerfile: infra/kong/spikes/external-authorizer/agent-a-mock/Dockerfile
+    environment:
+      SPIKE_STATE_DIR: /state
+    volumes:
+      - ${SPIKE_STATE_DIR}:/state
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9001/health', timeout=2).read()"]
+      interval: 5s
+      timeout: 2s
+      retries: 20

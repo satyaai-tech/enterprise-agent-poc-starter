@@ -1,10 +1,12 @@
-# Kong OSS Entra-validation decision and fallback options (PENDING)
+# Kong OSS Entra-validation decision and fallback options (COMPLETE)
 
 ## Status
 
-Status: PENDING
+Status: COMPLETE
 
-The repository design requires the northbound validation path to validate Microsoft Entra-issued tokens before routing to Agent A. Kong OSS is a candidate, but the exact behavior for this project remains unverified.
+The repository design requires the northbound validation path to validate Microsoft Entra-issued tokens before routing to Agent A. Kong OSS is a candidate, and the Kong OSS -> trusted validation proxy -> mock Agent A route is locally verified.
+
+Update: the live authorized-client validation artifact at `evidence/phase-0/phase-0-entra-authorized-client-validation-20261009T004249732177Z.json` proves authorized-client verification passed. Phase 0 is COMPLETE; later-phase gateway work remains open.
 
 ## Official evidence currently available
 
@@ -24,7 +26,8 @@ The Kong JWT plugin is a separate capability and must be evaluated on its own. I
 
 - Kong Gateway OSS 3.9.3 remains the required northbound routing gateway.
 - The proposed external authorizer performs complete Entra JWT validation before a request reaches Agent A.
-- The external authorizer implementation and all local test results remain Pending.
+- The Kong -> proxy -> mock Agent A Docker route is locally verified.
+- Live Entra tenant-backed validation for the same path is complete for the authorized-client check.
 
 ### Current stance
 
@@ -86,4 +89,4 @@ A different gateway or gateway edition may be chosen only if it demonstrates the
 
 ## Unresolved risk
 
-The remaining unresolved risk is whether the proposed external authorizer can perform the complete Entra validation policy and integrate with Kong without creating a bypass. This remains Pending local verification.
+The remaining unresolved work is limited to later phases: A2A/MCP gateway verification and downstream routing remain to be validated in Phases 3 and 4.

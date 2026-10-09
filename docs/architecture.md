@@ -91,3 +91,5 @@ Keep redacted proof in `evidence/` organized by phase. Evidence should name comp
 - Claims that Kong OSS includes Microsoft Entra OIDC integration.
 - Claims that an unspecified Agent Gateway implements A2A, MCP, OBO, or the required policy semantics.
 
+
+![Phase 0 Entra OBO identity flow](images/phase-0-entra-obo-flow.png)

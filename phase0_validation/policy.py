@@ -1,31 +1,13 @@
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
-import os
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib import request
 
 import jwt
-import msal
-from dotenv import load_dotenv
 
-REQUIRED_ENV_KEYS = [
-    "ENTRA_TENANT_ID",
-    "ENTRA_NOTEBOOK_CLIENT_ID",
-    "ENTRA_AGENT_A_CLIENT_ID",
-    "ENTRA_AGENT_A_CLIENT_SECRET",
-    "ENTRA_AGENT_A_APPLICATION_ID_URI",
-    "ENTRA_AGENT_A_SCOPE",
-    "ENTRA_AGENT_A_EXPECTED_AUDIENCE",
-    "ENTRA_AGENT_B_CLIENT_ID",
-    "ENTRA_AGENT_B_APPLICATION_ID_URI",
-    "ENTRA_AGENT_B_SCOPE",
-    "ENTRA_AGENT_B_EXPECTED_AUDIENCE",
-]
 ALLOWED_TOKEN_VERSIONS = {"1.0", "2.0"}
 
 
@@ -49,31 +31,8 @@ class AuthorizedClientMismatchError(RuntimeError):
     """Raised when the authorized-client claim is missing or does not match the expected client."""
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-def load_env_file() -> None:
-    dotenv_path = _repo_root() / ".env"
-    load_dotenv(dotenv_path=dotenv_path, override=False)
-
-
-def get_runtime_config() -> dict[str, str]:
-    load_env_file()
-    values: dict[str, str] = {}
-    missing: list[str] = []
-    for key in REQUIRED_ENV_KEYS:
-        value = os.getenv(key, "")
-        if not value:
-            missing.append(key)
-        else:
-            values[key] = value
-    if missing:
-        raise RuntimeError(
-            "Missing required Entra configuration. Populate .env with the exact portal values before running the live spike. "
-            f"Missing: {', '.join(missing)}"
-        )
-    return values
+OpenIdConfigurationProvider = Callable[[str, str, int], dict[str, Any]]
+JwksProvider = Callable[[str, int], dict[str, Any]]
 
 
 def safe_error_category(exc: BaseException) -> str:
@@ -144,7 +103,7 @@ def fetch_json(url: str, *, timeout: int = 5) -> dict[str, Any]:
         with request.urlopen(url, timeout=timeout) as response:
             data = response.read().decode("utf-8")
         return json.loads(data)
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
         raise MetadataError("Metadata request failed.") from None
 
 
@@ -184,6 +143,8 @@ def validate_token_for_policy(
     expected_issuer: str,
     expected_authorized_client: str | None = None,
     test_name: str,
+    openid_configuration_provider: OpenIdConfigurationProvider | None = None,
+    jwks_provider: JwksProvider | None = None,
 ) -> dict[str, Any]:
     timestamp_utc = datetime.now(timezone.utc).isoformat()
     evidence = {
@@ -202,6 +163,9 @@ def validate_token_for_policy(
         "error_category": "UNKNOWN_ERROR",
     }
 
+    metadata_provider = openid_configuration_provider or fetch_openid_configuration
+    signing_key_provider = jwks_provider or fetch_jwks_document
+
     try:
         unverified_payload = jwt.decode(
             token,
@@ -219,7 +183,7 @@ def validate_token_for_policy(
             raise UnsupportedTokenVersionError(f"Unsupported token version: {version!r}.")
         evidence["token_version"] = version
 
-        metadata = fetch_openid_configuration(tenant_id, version=version, timeout=5)
+        metadata = metadata_provider(tenant_id, version, 5)
         metadata_issuer = metadata.get("issuer")
         if not metadata_issuer:
             raise MetadataError("Metadata missing issuer.")
@@ -229,7 +193,7 @@ def validate_token_for_policy(
         jwks_uri = metadata.get("jwks_uri")
         if not jwks_uri:
             raise MetadataError("Metadata missing jwks_uri.")
-        jwks = fetch_jwks_document(jwks_uri, timeout=5)
+        jwks = signing_key_provider(jwks_uri, 5)
 
         header = jwt.get_unverified_header(token)
         kid = header.get("kid")
@@ -319,20 +283,12 @@ def validate_token_for_policy(
     return evidence
 
 
-def build_live_evidence_destination(root: Path) -> Path:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    filename = f"phase-0-entra-authorized-client-validation-{timestamp}.json"
-    return root / filename
-
-
-def write_evidence(result: dict[str, Any], *, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
-
-
-def resolve_expected_issuer(tenant_id: str, token: str) -> str:
+def resolve_expected_issuer(
+    tenant_id: str,
+    token: str,
+    *,
+    openid_configuration_provider: OpenIdConfigurationProvider | None = None,
+) -> str:
     unverified_payload = jwt.decode(
         token,
         options={
@@ -347,7 +303,8 @@ def resolve_expected_issuer(tenant_id: str, token: str) -> str:
     version = str(unverified_payload.get("ver") or "")
     if version not in ALLOWED_TOKEN_VERSIONS:
         raise UnsupportedTokenVersionError(f"Unsupported token version: {version!r}.")
-    metadata = fetch_openid_configuration(tenant_id, version=version, timeout=5)
+    metadata_provider = openid_configuration_provider or fetch_openid_configuration
+    metadata = metadata_provider(tenant_id, version, 5)
     issuer = metadata.get("issuer")
     if not issuer:
         raise MetadataError("Metadata missing issuer.")
@@ -361,119 +318,3 @@ def summarize_live_validation(agent_a: dict[str, Any], agent_b: dict[str, Any], 
         negative_result.get("expected_outcome") == "FAIL" and negative_result.get("actual_outcome") == "FAIL" and negative_result.get("pass") is True,
     ]
     return "PASS" if all(required_checks) else "FAIL"
-
-
-def run_live_spike() -> int:
-    config = get_runtime_config()
-    tenant_id = config["ENTRA_TENANT_ID"]
-    notebook_client = config["ENTRA_NOTEBOOK_CLIENT_ID"]
-    agent_a_scope = config["ENTRA_AGENT_A_SCOPE"]
-    agent_b_scope = config["ENTRA_AGENT_B_SCOPE"]
-    agent_a_expected_scope = extract_delegated_scope_name(agent_a_scope)
-    agent_b_expected_scope = extract_delegated_scope_name(agent_b_scope)
-
-    authority = f"https://login.microsoftonline.com/{tenant_id}"
-    app = msal.PublicClientApplication(client_id=notebook_client, authority=authority)
-    flow = app.initiate_device_flow(scopes=[agent_a_scope])
-    if "message" not in flow:
-        raise RuntimeError("Device flow message missing.")
-
-    print(flow["message"])
-    result = app.acquire_token_by_device_flow(flow)
-    if "access_token" not in result:
-        raise RuntimeError("MSAL device-flow failed.")
-    agent_a_token = result["access_token"]
-
-    obo_app = msal.ConfidentialClientApplication(
-        client_id=config["ENTRA_AGENT_A_CLIENT_ID"],
-        client_credential=config["ENTRA_AGENT_A_CLIENT_SECRET"],
-        authority=authority,
-    )
-    obo_result = obo_app.acquire_token_on_behalf_of(
-        user_assertion=agent_a_token,
-        scopes=[agent_b_scope],
-    )
-    if "access_token" not in obo_result:
-        raise RuntimeError("MSAL OBO flow failed.")
-
-    guest_a_issuer = resolve_expected_issuer(tenant_id, agent_a_token)
-    agent_a = validate_token_for_policy(
-        agent_a_token,
-        tenant_id=tenant_id,
-        expected_audience=config["ENTRA_AGENT_A_EXPECTED_AUDIENCE"],
-        expected_scope=agent_a_expected_scope,
-        expected_issuer=guest_a_issuer,
-        expected_authorized_client=notebook_client,
-        test_name="agent_a_live_validation",
-    )
-    agent_b = validate_token_for_policy(
-        obo_result["access_token"],
-        tenant_id=tenant_id,
-        expected_audience=config["ENTRA_AGENT_B_EXPECTED_AUDIENCE"],
-        expected_scope=agent_b_expected_scope,
-        expected_issuer=resolve_expected_issuer(tenant_id, obo_result["access_token"]),
-        expected_authorized_client=config["ENTRA_AGENT_A_CLIENT_ID"],
-        test_name="agent_b_live_validation",
-    )
-    agent_a_as_b = validate_token_for_policy(
-        agent_a_token,
-        tenant_id=tenant_id,
-        expected_audience=config["ENTRA_AGENT_B_EXPECTED_AUDIENCE"],
-        expected_scope=agent_b_expected_scope,
-        expected_issuer=guest_a_issuer,
-        expected_authorized_client=config["ENTRA_AGENT_A_CLIENT_ID"],
-        test_name="agent_a_as_agent_b_negative",
-    )
-    negative_result = {
-        "test_name": "agent_a_as_agent_b_negative",
-        "expected_outcome": "FAIL",
-        "actual_outcome": agent_a_as_b.get("result", "FAIL"),
-        "error_category": agent_a_as_b.get("error_category", "UNKNOWN_ERROR"),
-        "pass": bool(
-            agent_a_as_b.get("result") == "FAIL"
-            and agent_a_as_b.get("error_category") == "INVALID_AUDIENCE"
-            and agent_a_as_b.get("audience_verified") is False
-        ),
-    }
-
-    evidence = {
-        "status": summarize_live_validation(agent_a, agent_b, negative_result),
-        "source": "live-local",
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "agent_a": agent_a,
-        "agent_b": agent_b,
-        "agent_a_as_b_negative": negative_result,
-    }
-    evidence_dir = _repo_root() / "evidence" / "phase-0"
-    destination = build_live_evidence_destination(evidence_dir)
-    try:
-        write_evidence(evidence, destination=destination)
-    except FileExistsError:
-        print("LIVE_SPIKE_STATUS: FAIL")
-        print("LIVE_SPIKE_EVIDENCE: none")
-        return 1
-    status = "PASS" if evidence["status"] == "PASS" else "FAIL"
-    print(f"LIVE_SPIKE_STATUS: {status}")
-    print(f"LIVE_SPIKE_EVIDENCE: evidence/phase-0/{destination.name}")
-    return 0 if status == "PASS" else 1
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Phase 0 Entra identity validation spike")
-    parser.add_argument("--live", action="store_true", help="Run the live tenant-backed flow in a local terminal only")
-    args = parser.parse_args()
-
-    if not args.live:
-        print("Safe mode only: the live tenant-backed spike is disabled by default. Populate .env privately and run with --live in a local terminal when ready.")
-        return 0
-
-    try:
-        return run_live_spike()
-    except Exception:  # pragma: no cover - operational path
-        print("LIVE_SPIKE_STATUS: FAIL")
-        print("LIVE_SPIKE_EVIDENCE: none")
-        return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
