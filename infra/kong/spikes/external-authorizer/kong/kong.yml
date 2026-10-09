@@ -1,0 +1,14 @@
+_format_version: "3.0"
+
+services:
+  - name: validation-proxy
+    url: http://validation-proxy:9000
+    routes:
+      - name: agent-a-route
+        paths:
+          - /agent-a
+        strip_path: true
+        preserve_host: false
+        methods:
+          - GET
+          - POST

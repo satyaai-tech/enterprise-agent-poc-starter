@@ -171,8 +171,20 @@ def test_metadata_failure_maps_to_safe_metadata_error_category(monkeypatch):
 
 
 def test_missing_config_fails_safely(monkeypatch):
-    monkeypatch.delenv("ENTRA_TENANT_ID", raising=False)
-    monkeypatch.delenv("ENTRA_NOTEBOOK_CLIENT_ID", raising=False)
+    for key in (
+        "ENTRA_TENANT_ID",
+        "ENTRA_NOTEBOOK_CLIENT_ID",
+        "ENTRA_AGENT_A_CLIENT_ID",
+        "ENTRA_AGENT_A_CLIENT_SECRET",
+        "ENTRA_AGENT_A_APPLICATION_ID_URI",
+        "ENTRA_AGENT_A_SCOPE",
+        "ENTRA_AGENT_A_EXPECTED_AUDIENCE",
+        "ENTRA_AGENT_B_CLIENT_ID",
+        "ENTRA_AGENT_B_APPLICATION_ID_URI",
+        "ENTRA_AGENT_B_SCOPE",
+        "ENTRA_AGENT_B_EXPECTED_AUDIENCE",
+    ):
+        monkeypatch.setenv(key, "")
     with pytest.raises(RuntimeError, match="Missing required Entra configuration"):
         get_runtime_config()
 
@@ -229,7 +241,14 @@ def test_modified_signature_is_rejected(monkeypatch):
     issuer = f"https://sts.windows.net/{tenant_id}/"
     token = build_signed_token(private_key, tenant_id=tenant_id, audience=audience, scope=scope, issuer=issuer)
     public_jwk["kid"] = "synthetic-kid"
-    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+
+    header, payload, signature = token.split(".")
+    tampered_signature = list(signature)
+    for index, character in enumerate(tampered_signature):
+        if character in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_":
+            tampered_signature[index] = "A" if character != "A" else "B"
+            break
+    tampered = ".".join([header, payload, "".join(tampered_signature)])
 
     monkeypatch.setattr(
         entra_module,
@@ -355,6 +374,243 @@ def test_agent_a_token_as_agent_b_has_expected_negative_result(monkeypatch):
     assert result["audience_verified"] is False
 
 
+def test_negative_token_cases_fail_closed_for_wrong_tenant_expiry_and_malformed_tokens(monkeypatch):
+    private_key, public_jwk = build_synthetic_rsa_jwk_pair()
+    tenant_id = "11111111-2222-3333-4444-555555666666"
+    audience = "api://agent-a-example"
+    scope = "access_as_user"
+    issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
+    public_jwk["kid"] = "synthetic-kid"
+
+    monkeypatch.setattr(
+        entra_module,
+        "fetch_openid_configuration",
+        lambda tenant_id, *, version, timeout=5: {"issuer": issuer, "jwks_uri": "https://example.test/jwks"},
+    )
+    monkeypatch.setattr(
+        entra_module,
+        "fetch_jwks_document",
+        lambda jwks_uri, *, timeout=5: {"keys": [public_jwk]},
+    )
+
+    valid_token = build_signed_token(
+        private_key,
+        tenant_id=tenant_id,
+        audience=audience,
+        scope=scope,
+        issuer=issuer,
+        version="2.0",
+    )
+    wrong_tenant = validate_token_for_policy(
+        valid_token,
+        tenant_id="99999999-8888-7777-6666-555555444444",
+        expected_audience=audience,
+        expected_scope=scope,
+        expected_issuer=issuer,
+        expected_authorized_client="notebook-client",
+        test_name="synthetic_wrong_tenant",
+    )
+    assert wrong_tenant["result"] == "FAIL"
+    assert wrong_tenant["error_category"] == "TENANT_MISMATCH"
+    assert wrong_tenant["tenant_verified"] is False
+
+    expired_payload = {
+        "ver": "2.0",
+        "iss": issuer,
+        "aud": audience,
+        "tid": tenant_id,
+        "azp": "notebook-client",
+        "scp": scope,
+        "exp": int(datetime.now(timezone.utc).timestamp()) - 120,
+        "nbf": int(datetime.now(timezone.utc).timestamp()) - 300,
+        "iat": int(datetime.now(timezone.utc).timestamp()) - 600,
+    }
+    expired_token = jwt.encode(expired_payload, private_key, algorithm="RS256", headers={"kid": "synthetic-kid"})
+    expired = validate_token_for_policy(
+        expired_token,
+        tenant_id=tenant_id,
+        expected_audience=audience,
+        expected_scope=scope,
+        expected_issuer=issuer,
+        expected_authorized_client="notebook-client",
+        test_name="synthetic_expired_token",
+    )
+    assert expired["result"] == "FAIL"
+    assert expired["error_category"] == "EXPIRED_TOKEN"
+    assert expired["lifetime_verified"] is False
+
+    malformed = validate_token_for_policy(
+        "not.a.real.jwt",
+        tenant_id=tenant_id,
+        expected_audience=audience,
+        expected_scope=scope,
+        expected_issuer=issuer,
+        expected_authorized_client="notebook-client",
+        test_name="synthetic_malformed_token",
+    )
+    assert malformed["result"] == "FAIL"
+    assert malformed["error_category"] == "MALFORMED_TOKEN"
+
+
+def test_missing_issuer_and_missing_tenant_claim_fail_closed(monkeypatch):
+    private_key, public_jwk = build_synthetic_rsa_jwk_pair()
+    tenant_id = "11111111-2222-3333-4444-555555666666"
+    audience = "api://agent-a-example"
+    scope = "access_as_user"
+    issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
+    public_jwk["kid"] = "synthetic-kid"
+
+    monkeypatch.setattr(
+        entra_module,
+        "fetch_openid_configuration",
+        lambda tenant_id, *, version, timeout=5: {"issuer": issuer, "jwks_uri": "https://example.test/jwks"},
+    )
+    monkeypatch.setattr(
+        entra_module,
+        "fetch_jwks_document",
+        lambda jwks_uri, *, timeout=5: {"keys": [public_jwk]},
+    )
+
+    payload_without_issuer = {
+        "ver": "2.0",
+        "aud": audience,
+        "tid": tenant_id,
+        "azp": "notebook-client",
+        "scp": scope,
+        "exp": int(datetime.now(timezone.utc).timestamp()) + 3600,
+        "nbf": int(datetime.now(timezone.utc).timestamp()) - 60,
+        "iat": int(datetime.now(timezone.utc).timestamp()) - 120,
+    }
+    missing_issuer_token = jwt.encode(payload_without_issuer, private_key, algorithm="RS256", headers={"kid": "synthetic-kid"})
+    missing_issuer = validate_token_for_policy(
+        missing_issuer_token,
+        tenant_id=tenant_id,
+        expected_audience=audience,
+        expected_scope=scope,
+        expected_issuer=issuer,
+        expected_authorized_client="notebook-client",
+        test_name="synthetic_missing_issuer",
+    )
+    assert missing_issuer["result"] == "FAIL"
+    assert missing_issuer["error_category"] == "MISSING_ISSUER"
+
+    payload_without_tid = {
+        "ver": "2.0",
+        "iss": issuer,
+        "aud": audience,
+        "azp": "notebook-client",
+        "scp": scope,
+        "exp": int(datetime.now(timezone.utc).timestamp()) + 3600,
+        "nbf": int(datetime.now(timezone.utc).timestamp()) - 60,
+        "iat": int(datetime.now(timezone.utc).timestamp()) - 120,
+    }
+    missing_tid_token = jwt.encode(payload_without_tid, private_key, algorithm="RS256", headers={"kid": "synthetic-kid"})
+    missing_tid = validate_token_for_policy(
+        missing_tid_token,
+        tenant_id=tenant_id,
+        expected_audience=audience,
+        expected_scope=scope,
+        expected_issuer=issuer,
+        expected_authorized_client="notebook-client",
+        test_name="synthetic_missing_tid",
+    )
+    assert missing_tid["result"] == "FAIL"
+    assert missing_tid["error_category"] == "MISSING_TENANT"
+
+
+def test_authorized_client_failures_are_rejected_for_wrong_and_missing_claims(monkeypatch):
+    private_key, public_jwk = build_synthetic_rsa_jwk_pair()
+    tenant_id = "11111111-2222-3333-4444-555555666666"
+    audience = "api://agent-a-example"
+    scope = "access_as_user"
+    issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
+    public_jwk["kid"] = "synthetic-kid"
+
+    monkeypatch.setattr(
+        entra_module,
+        "fetch_openid_configuration",
+        lambda tenant_id, *, version, timeout=5: {"issuer": issuer, "jwks_uri": "https://example.test/jwks"},
+    )
+    monkeypatch.setattr(
+        entra_module,
+        "fetch_jwks_document",
+        lambda jwks_uri, *, timeout=5: {"keys": [public_jwk]},
+    )
+
+    wrong_client_payload = {
+        "ver": "2.0",
+        "iss": issuer,
+        "aud": audience,
+        "tid": tenant_id,
+        "azp": "wrong-client",
+        "scp": scope,
+        "exp": int(datetime.now(timezone.utc).timestamp()) + 3600,
+        "nbf": int(datetime.now(timezone.utc).timestamp()) - 60,
+        "iat": int(datetime.now(timezone.utc).timestamp()) - 120,
+    }
+    wrong_client_token = jwt.encode(wrong_client_payload, private_key, algorithm="RS256", headers={"kid": "synthetic-kid"})
+    wrong_client = validate_token_for_policy(
+        wrong_client_token,
+        tenant_id=tenant_id,
+        expected_audience=audience,
+        expected_scope=scope,
+        expected_issuer=issuer,
+        expected_authorized_client="notebook-client",
+        test_name="synthetic_wrong_authorized_client",
+    )
+    assert wrong_client["result"] == "FAIL"
+    assert wrong_client["error_category"] == "UNAUTHORIZED_CLIENT"
+    assert wrong_client["authorized_client_verified"] is False
+
+    missing_azp_payload = {
+        "ver": "2.0",
+        "iss": issuer,
+        "aud": audience,
+        "tid": tenant_id,
+        "scp": scope,
+        "exp": int(datetime.now(timezone.utc).timestamp()) + 3600,
+        "nbf": int(datetime.now(timezone.utc).timestamp()) - 60,
+        "iat": int(datetime.now(timezone.utc).timestamp()) - 120,
+    }
+    missing_azp_token = jwt.encode(missing_azp_payload, private_key, algorithm="RS256", headers={"kid": "synthetic-kid"})
+    missing_azp = validate_token_for_policy(
+        missing_azp_token,
+        tenant_id=tenant_id,
+        expected_audience=audience,
+        expected_scope=scope,
+        expected_issuer=issuer,
+        expected_authorized_client="notebook-client",
+        test_name="synthetic_missing_azp",
+    )
+    assert missing_azp["result"] == "FAIL"
+    assert missing_azp["error_category"] == "UNAUTHORIZED_CLIENT"
+    assert missing_azp["authorized_client_verified"] is False
+
+    v1_payload = {
+        "ver": "1.0",
+        "iss": issuer,
+        "aud": audience,
+        "tid": tenant_id,
+        "scp": scope,
+        "exp": int(datetime.now(timezone.utc).timestamp()) + 3600,
+        "nbf": int(datetime.now(timezone.utc).timestamp()) - 60,
+        "iat": int(datetime.now(timezone.utc).timestamp()) - 120,
+    }
+    v1_missing_appid = jwt.encode(v1_payload, private_key, algorithm="RS256", headers={"kid": "synthetic-kid"})
+    missing_appid = validate_token_for_policy(
+        v1_missing_appid,
+        tenant_id=tenant_id,
+        expected_audience=audience,
+        expected_scope=scope,
+        expected_issuer=issuer,
+        expected_authorized_client="notebook-client",
+        test_name="synthetic_missing_appid",
+    )
+    assert missing_appid["result"] == "FAIL"
+    assert missing_appid["error_category"] == "UNAUTHORIZED_CLIENT"
+    assert missing_appid["authorized_client_verified"] is False
+
+
 def test_evidence_serialization_excludes_identifiers_and_sensitive_claims(monkeypatch):
     private_key, public_jwk = build_synthetic_rsa_jwk_pair()
     tenant_id = "11111111-2222-3333-4444-555555666666"
@@ -394,7 +650,11 @@ def test_evidence_serialization_excludes_identifiers_and_sensitive_claims(monkey
     assert "scope_verified" in serialized
 
 
-def test_run_live_spike_returns_nonzero_when_any_required_validation_fails(monkeypatch, tmp_path):
+def test_run_live_spike_returns_nonzero_when_any_required_validation_fails(monkeypatch, tmp_path, capsys):
+    historical_root = Path(__file__).resolve().parents[2]
+    historical_file = historical_root / "evidence" / "phase-0" / "phase-0-entra-validation-results.json"
+    historical_before = historical_file.read_bytes() if historical_file.exists() else b""
+
     monkeypatch.setattr(
         entra_module,
         "_repo_root",
@@ -435,30 +695,62 @@ def test_run_live_spike_returns_nonzero_when_any_required_validation_fails(monke
         def acquire_token_on_behalf_of(self, user_assertion, scopes):
             return {"access_token": "agent-b-token"}
 
-    captured = {}
-
-    def fake_write_evidence(result, *, destination):
-        captured["destination"] = destination
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
-
     monkeypatch.setattr(entra_module.msal, "PublicClientApplication", lambda **kwargs: FakeApp())
     monkeypatch.setattr(entra_module.msal, "ConfidentialClientApplication", lambda **kwargs: FakeOboApp())
     monkeypatch.setattr(entra_module, "resolve_expected_issuer", lambda tenant_id, token: "https://login.microsoftonline.com/tenant-123/v2.0")
-    monkeypatch.setattr(entra_module, "write_evidence", fake_write_evidence)
 
     def fake_validate(token, **kwargs):
         if kwargs["test_name"] == "agent_a_live_validation":
-            return {"result": "PASS", "error_category": "NONE"}
+            return {"result": "PASS", "error_category": "NONE", "authorized_client_verified": True}
         if kwargs["test_name"] == "agent_b_live_validation":
-            return {"result": "FAIL", "error_category": "INVALID_AUDIENCE"}
-        return {"result": "FAIL", "error_category": "INVALID_AUDIENCE", "audience_verified": False, "pass": False}
+            return {"result": "PASS", "error_category": "NONE", "authorized_client_verified": True}
+        return {"result": "FAIL", "error_category": "INVALID_AUDIENCE", "audience_verified": False, "authorized_client_verified": False, "pass": False}
 
     monkeypatch.setattr(entra_module, "validate_token_for_policy", fake_validate)
 
+    success_run = run_live_spike()
+    stdout = capsys.readouterr().out
+    assert success_run == 0
+    assert "sign in" in stdout
+    assert "LIVE_SPIKE_STATUS: PASS" in stdout
+    assert "LIVE_SPIKE_EVIDENCE: evidence/phase-0/" in stdout
+    assert "agent-a-token" not in stdout.lower()
+    assert "agent-b-token" not in stdout.lower()
+    assert "tenant-123" not in stdout.lower()
+    assert "agent-a" not in stdout.lower()
+    assert "agent-b" not in stdout.lower()
+    assert "secret" not in stdout.lower()
+
+    destination = next((path for path in (tmp_path / "evidence" / "phase-0").glob("phase-0-entra-authorized-client-validation-*.json")), None)
+    assert destination is not None
+    assert destination.resolve().is_relative_to(tmp_path.resolve())
+    assert not destination.resolve().is_relative_to(historical_root.resolve())
+
+    data = json.loads(destination.read_text(encoding="utf-8"))
+    assert "authorized_client_verified" in data["agent_a"]
+    serialized = json.dumps(data, sort_keys=True)
+    assert "tenant-123" not in serialized
+    assert "agent-a" not in serialized
+    assert "agent-b" not in serialized
+    assert "secret" not in serialized.lower()
+    assert historical_file.read_bytes() == historical_before
+
+    destination.write_text("existing-content", encoding="utf-8")
+    monkeypatch.setattr(entra_module, "build_live_evidence_destination", lambda root: destination)
     assert run_live_spike() == 1
-    assert captured["destination"].resolve().is_relative_to(tmp_path.resolve())
-    assert not captured["destination"].resolve().is_relative_to(Path(__file__).resolve().parents[2].resolve())
+    collision_stdout = capsys.readouterr().out
+    assert "LIVE_SPIKE_STATUS: FAIL" in collision_stdout
+    assert "LIVE_SPIKE_EVIDENCE: none" in collision_stdout
+    assert "agent-a-token" not in collision_stdout.lower()
+    assert "secret" not in collision_stdout.lower()
+
+    try:
+        entra_module.write_evidence({"result": "PASS", "authorized_client_verified": True}, destination=destination)
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("write_evidence should reject overwriting an existing file")
+    assert destination.read_text(encoding="utf-8") == "existing-content"
 
 
 def test_summarize_live_validation_requires_all_positive_and_negative_checks():

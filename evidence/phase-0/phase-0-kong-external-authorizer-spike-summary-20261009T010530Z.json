@@ -1,0 +1,29 @@
+{
+  "timestamp_utc": "2026-10-09T01:05:30Z",
+  "status": "PASS",
+  "source": "docker-backed-synthetic-spike",
+  "stack": {
+    "kong": "kong:3.9.3",
+    "validation_proxy": "private compose service",
+    "mock_agent_a": "private compose service"
+  },
+  "validation": {
+    "valid_synthetic_token_reached_agent_a": true,
+    "missing_token_rejected": true,
+    "malformed_token_rejected": true,
+    "tampered_token_rejected": true,
+    "expired_token_rejected": true,
+    "wrong_audience_rejected": true,
+    "wrong_tenant_rejected": true,
+    "wrong_scope_rejected": true,
+    "wrong_client_rejected": true,
+    "proxy_unavailable_did_not_reach_agent_a": true,
+    "direct_host_access_to_agent_a_blocked": true
+  },
+  "notes": [
+    "No Microsoft Entra traffic was generated.",
+    "No raw bearer token is stored in this artifact.",
+    "Only Kong published a host port.",
+    "The validation proxy and mock Agent A remained private on one Compose network."
+  ]
+}

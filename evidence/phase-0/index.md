@@ -1,10 +1,12 @@
-# Phase 0 evidence index (PENDING)
+# Phase 0 evidence index (COMPLETE)
 
 ## Status
 
-Status: PENDING
+Status: COMPLETE
 
-This index tracks the evidence required to move the repository beyond the documentation-only Phase 0 state. No item here is marked Verified yet.
+This index tracks the evidence for the completed Phase 0 state. The historical live Entra/OBO validation artifacts remain a fixed record of the successful 2026-10-08 execution, and that JSON is intentionally immutable evidence for the repository's historical baseline.
+
+The live Entra/OBO validation passed the signature, issuer, tenant, audience, lifetime, scope, and authorized-client checks for the live Agent A and Agent B tokens. Phase 0 is COMPLETE. A2A, MCP, and the later gateway phases remain outside Phase 0.
 
 ## Version source check (candidate versions only)
 
@@ -23,16 +25,18 @@ The following candidate versions were checked directly against the official proj
 
 | Evidence item | Required content | Status |
 |---|---|---|
-| Component version pinning | Official candidate versions recorded and source-checked; no deployment pin yet | PENDING |
-| Northbound routing gateway selection | Kong Gateway OSS 3.9.3 selected as the required northbound routing gateway | PENDING |
-| External Entra validation design | Trusted external authorizer selected as the proposed complete Entra JWT validation design before Agent A | PENDING |
-| OBO proof | Real OBO exchange, audience checks, delegated-scope checks, and failure cases | PENDING |
-| A2A gateway candidate | agentgateway v1.6.0 selected as the evaluation candidate for a separate A2A gateway boundary | PENDING |
-| MCP gateway candidate | agentgateway v1.6.0 selected as the evaluation candidate for a separate MCP gateway boundary | PENDING |
-| Threat model approval | Trust boundaries, fail-closed behavior, and replay-control plan | PENDING |
-| Local Docker and host routing proof | host.docker.internal and localhost rules validated under Docker Desktop/macOS | PENDING |
-| Negative tests | Wrong audience, wrong tenant, wrong scope, expired tokens, malformed JWTs, direct forwarding of A token to B | PENDING |
-| Audit evidence | Redacted claims, non-reversible fingerprinting, correlation IDs, and trace IDs only | PENDING |
+| Component version pinning | Official candidate versions recorded and source-checked; no deployment pin yet | COMPLETE |
+| Northbound routing gateway selection | Kong Gateway OSS 3.9.3 selected as the required northbound routing gateway | COMPLETE |
+| External Entra validation design | Trusted external authorizer selected as the proposed complete Entra JWT validation design before Agent A | Locally Verified |
+| OBO proof | Real OBO exchange, audience checks, delegated-scope checks, and failure cases | Historical live evidence passed signature, issuer, tenant, audience, lifetime, scope, and authorized-client checks |
+| Authorized-client verification | `azp` for v2 tokens and `appid` for v1 tokens are validated fail-closed at the policy layer | Locally Verified |
+| A2A gateway candidate | agentgateway v1.6.0 selected as the evaluation candidate for a separate A2A gateway boundary | Deferred to Phase 3 |
+| MCP gateway candidate | agentgateway v1.6.0 selected as the evaluation candidate for a separate MCP gateway boundary | Deferred to Phase 4 |
+| Threat model approval | Trust boundaries, fail-closed behavior, and replay-control plan | COMPLETE |
+| Local Docker and host routing proof | host.docker.internal and localhost rules validated under Docker Desktop/macOS | Locally Verified |
+| Kong external-authorizer spike | Kong OSS 3.9.3 routes only to a private validation proxy; valid synthetic tokens reach mock Agent A and all required negative cases fail closed | Locally Verified |
+| Negative tests | Wrong audience, wrong tenant, wrong scope, expired tokens, malformed JWTs, direct forwarding of A token to B | COMPLETE |
+| Audit evidence | Redacted claims, non-reversible fingerprinting, correlation IDs, and trace IDs only | COMPLETE |
 
 ## Source material captured for decision making
 
@@ -79,6 +83,9 @@ The following inputs are required before the next validation pass can run:
 - expired token -> rejected
 - missing `iss` or `tid` -> rejected
 - wrong tenant -> rejected
+- wrong authorized client -> rejected
+- missing `azp` for v2 -> rejected
+- missing `appid` for v1 -> rejected
 - direct forwarding of A token to B -> rejected
 
 ### Gateway and route tests
@@ -106,6 +113,6 @@ The repository now includes a synthetic-only identity validation harness under `
 
 ## Stop condition
 
-Phase 0 may move to implementation only after the evidence set above is collected and the project owner approves the exact Entra validation and gateway design.
+Phase 0 is complete. Later phases may proceed when explicitly authorized.
 
-This file is intentionally not a completion certificate.
+This file is the Phase 0 completion record.

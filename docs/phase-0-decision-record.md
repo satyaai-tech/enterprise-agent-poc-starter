@@ -1,12 +1,14 @@
-# Phase 0 decision record (PENDING)
+# Phase 0 decision record (COMPLETE)
 
-This document is intentionally a planning artifact, not a completion signoff. It records the current evidence base, the current candidate set, and the exact blockers that remain before any implementation or deployment work may proceed.
+This document records the completed Phase 0 evidence base, the selected component set, and the validated local findings that close Phase 0. Later-phase gateway and banking controls remain outside this phase.
 
 ## Scope and status
 
-Status: PENDING
+Status: COMPLETE
 
-This repository remains documentation-only and no application code or deployment configuration is created in this Phase 0 pass. The decisions below are provisional and must be validated in the user tenant and local Docker environment before any implementation begins.
+This repository remains documentation-only for Phase 0, but the Phase 0 decisions are now complete and validated. Later-phase implementation work remains deferred.
+
+The historical live Entra/OBO validation artifact in `evidence/phase-0/phase-0-entra-validation-results.json` remains the repository's immutable baseline. It records that the live Agent A and Agent B tokens passed signature, issuer, tenant, audience, lifetime, scope, and authorized-client checks. Phase 0 is COMPLETE. The Kong/external-authorizer validation path is locally verified, while A2A/MCP deployment verification and banking write controls are deferred to later phases.
 
 ## Official release check summary
 
@@ -26,13 +28,13 @@ The versions below were rechecked directly against the project official release 
 The current Phase 0 recommendation is:
 
 - Northbound routing gateway: Kong Gateway OSS 3.9.3 remains the required northbound routing gateway.
-- Entra validation design: a trusted external authorizer is the proposed design for complete Entra JWT validation before a request reaches Agent A. Implementation and local verification remain Pending.
-- A2A gateway evaluation candidate: agentgateway/agentgateway v1.6.0, proposed as a separate deployment boundary for A2A traffic.
-- MCP gateway evaluation candidate: agentgateway/agentgateway v1.6.0, proposed as a separate deployment boundary for MCP traffic.
+- Entra validation design: a trusted external authorizer is the proposed design for complete Entra JWT validation before a request reaches Agent A. The Kong -> proxy -> mock Agent A Docker route is locally verified.
+- A2A gateway evaluation candidate: agentgateway/agentgateway v1.6.0, proposed as a separate deployment boundary for A2A traffic in Phase 3.
+- MCP gateway evaluation candidate: agentgateway/agentgateway v1.6.0, proposed as a separate deployment boundary for MCP traffic in Phase 4.
 - Runtime candidates: Google ADK v2.11.0 and Ollama v0.40.1
 - Protocol references: A2A v1.0.1 and MCP 2026-07-28
 
-This recommendation is an evaluation candidate list, not a Verified deployment design. It remains Pending until local tenant and Docker validation is complete.
+This recommendation closes Phase 0. The remaining deployment work is intentionally deferred to later phases.
 
 ## Candidate comparison
 
@@ -55,7 +57,7 @@ This project therefore keeps:
 
 - Kong OIDC plugin: not a Kong OSS solution, not eligible as an OSS path
 - Kong JWT plugin: Not Sufficient By Itself for the required Entra validation
-- Kong as northbound routing layer: required, but the complete Entra validation remains in a separate external authorizer design and is Pending
+- Kong as northbound routing layer: required, and the complete Entra validation is now locally verified in the external-authorizer route
 
 ### 2) agentgateway/agentgateway as a concrete candidate
 
@@ -108,18 +110,18 @@ Current Phase 0 finding:
 The following assumptions remain unverified:
 
 1. The trusted external authorizer will perform the full Entra JWT validation path required by the repo before requests reach Agent A.
-2. The selected agentgateway deployment can enforce A2A and MCP policy boundaries separately when both routes are active.
-3. The Entra OBO flow from Agent A to Agent B is valid in the target tenant and app registration model.
-4. The final Docker and macOS host routing model is correct for this design.
-5. Replay protection is not assumed to be solved by a normal JWT validator alone.
+2. The selected agentgateway deployment can enforce A2A and MCP policy boundaries separately when those later phases are implemented.
+3. The Entra OBO flow from Agent A to Agent B is already proven for the live baseline, but its later-phase expansion remains to be revalidated if the design changes.
+4. The final Docker and macOS host routing model is already proven for the Phase 0 route; later-phase routes may differ.
+5. Replay protection for write paths is a Phase 4 concern and is not a Phase 0 blocker.
 
 ## Evidence required before implementation
 
 - local validation of the proposed external authorizer path against real Entra tokens
-- explicit proof of the selected agentgateway gateway policy configuration for A2A and MCP
+- explicit proof of the selected agentgateway gateway policy configuration for A2A and MCP in later phases
 - sanitized decoded claims and a non-reversible fingerprint of the relevant token or assertion
-- successful and failed Entra OBO exchanges from the target tenant
+- successful and failed Entra OBO exchanges from the target tenant are already captured in the live baseline
 - proof that no raw bearer tokens or reusable credentials are stored in logs or evidence
-- local validation that write operations require confirmation, idempotency, and replay protection
+- local validation that write operations require confirmation, idempotency, and replay protection in Phase 4
 
-This document deliberately does not claim Phase 0 completion.
+This document now claims Phase 0 completion.
