@@ -1,0 +1,60 @@
+services:
+  mock-banking:
+    build:
+      context: ./mock-banking
+    environment:
+      JWKS_FILE: /data/jwks.json
+      ISSUER: ${ISSUER:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/v2.0}
+      EXPECTED_AUDIENCE: ${EXPECTED_AUDIENCE:-api://banking-mock}
+      EXPECTED_SCOPE: ${EXPECTED_SCOPE:-Banking.Read Banking.Write}
+      AUTHORIZED_CLIENT: ${AUTHORIZED_CLIENT:-synthetic-agent-b}
+      TENANT_ID: ${TENANT_ID:-11111111-2222-3333-4444-555555666666}
+    volumes:
+      - ${JWKS_FILE_DIR:-./fixtures}:/data:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=2).read()"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - solo-mcp
+
+  jwks-fixture:
+    build:
+      context: ./jwks-fixture
+    environment:
+      JWKS_FILE: /data/jwks.json
+    volumes:
+      - ${JWKS_FILE_DIR:-./fixtures}:/data:ro
+    expose:
+      - "8081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/.well-known/jwks.json', timeout=2).read()"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - solo-mcp
+
+  agentgateway:
+    image: cr.agentgateway.dev/agentgateway:v1.6.0
+    depends_on:
+      mock-banking:
+        condition: service_healthy
+      jwks-fixture:
+        condition: service_healthy
+    ports:
+      - "${HOST_PORT:-18082}:8080"
+    volumes:
+      - ${AG_CONFIG_PATH:-/tmp/solo-agentgateway-mcp-config.yaml}:/etc/agentgateway/config.yaml:ro
+    command: ["-f", "/etc/agentgateway/config.yaml"]
+    networks:
+      - solo-mcp
+
+networks:
+  solo-mcp:
+    driver: bridge

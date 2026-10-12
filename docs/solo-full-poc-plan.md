@@ -149,7 +149,7 @@ The remaining roadmap remains exactly as follows.
 
 Clearly separate Entra OBO behavior performed by Agent A from A2A routing and enforcement performed by the gateway.
 
-### Solo Phase 3 — MCP gateway
+### Solo Phase 3 — MCP gateway (COMPLETE)
 
 Implement:
 

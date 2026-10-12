@@ -38,13 +38,24 @@ Microsoft Entra ID supplies a test user and separate registrations for Agent A a
 
 ## Active plan and current phase
 
-Use [docs/solo-full-poc-plan.md](docs/solo-full-poc-plan.md) as the active roadmap for the project. The repository is not being reset to Phase 0; the active sequence is:
+Use [docs/solo-full-poc-plan.md](docs/solo-full-poc-plan.md) as the active roadmap for the project.
 
+Completed:
+
+- Phase 0: Identity and gateway validation
+- Phase 1: Solo API edge
+- Phase 2: Solo A2A gateway and Entra OBO
 - Phase 3: Solo MCP gateway and banking mock server
+
+Current phase:
+
 - Phase 4: Google ADK agents with local Ollama
+
+Remaining:
+
 - Phase 5: Jupyter end-to-end Solo demonstration
 
-The historical Kong work remains in the repository as reference material only and should not be treated as the active implementation path.
+The historical Kong work remains in the repository as reference material only and is not part of the active runtime architecture.
 
 ## Exact Copilot kickoff prompt
 
