@@ -175,7 +175,7 @@ Acceptance criteria:
 
 Clearly distinguish gateway authorization from final business authorization enforced by the banking server.
 
-### Solo Phase 4 — Local agents and model
+### Solo Phase 4 — Local agents and model (COMPLETE)
 
 Connect:
 
@@ -188,7 +188,9 @@ Connect:
 
 Document Docker Desktop networking and when `host.docker.internal` is required to reach host-based Ollama or agents.
 
-### Solo Phase 5 — End-to-end Solo validation
+This Phase 4 local-agent slice is complete with sanitized evidence showing the Solo A2A gateway route, private Agent B runtime, and verified delegated PASS result through the local Ollama-backed ADK flow.
+
+### Solo Phase 5 — End-to-end Solo validation (CURRENT)
 
 Run the complete Solo flow end-to-end:
 

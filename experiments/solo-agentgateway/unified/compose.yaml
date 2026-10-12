@@ -1,0 +1,98 @@
+services:
+  agent-a:
+    build:
+      context: ../../../
+      dockerfile: experiments/solo-agentgateway/adk-a2a/Dockerfile
+    command:
+      - sh
+      - -lc
+      - >-
+        PYTHONPATH=/workspace adk api_server --with_ui --host 0.0.0.0
+        --port 8000 /workspace/agents/agent_a
+    environment:
+      PYTHONPATH: /workspace
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      OLLAMA_API_BASE: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
+      AGENT_B_A2A_URL: http://agentgateway:8081
+    expose:
+      - "8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - unified-private
+
+  agent-b:
+    build:
+      context: ../../../
+      dockerfile: experiments/solo-agentgateway/adk-a2a/Dockerfile
+    environment:
+      PYTHONPATH: /workspace
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      OLLAMA_API_BASE: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
+      A2A_HOST: 0.0.0.0
+      A2A_PORT: "8001"
+      A2A_PUBLIC_URL: http://127.0.0.1:${A2A_HOST_PORT:-18081}
+    expose:
+      - "8001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/.well-known/agent-card.json', timeout=5).read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - unified-private
+
+  banking-mcp:
+    build:
+      context: ../mcp/mock-banking
+    environment:
+      JWKS_FILE: /data/jwks.json
+      ISSUER: ${BANKING_ISSUER:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/v2.0}
+      EXPECTED_AUDIENCE: ${BANKING_AUDIENCE:-api://banking-mock}
+      EXPECTED_SCOPE: ${BANKING_SCOPE:-Banking.Read Banking.Write}
+      AUTHORIZED_CLIENT: ${BANKING_AUTHORIZED_CLIENT:-synthetic-agent-b}
+      TENANT_ID: ${TENANT_ID:-11111111-2222-3333-4444-555555666666}
+    volumes:
+      - ${JWKS_FILE_DIR:-../mcp/fixtures}:/data:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5).read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - unified-private
+
+  agentgateway:
+    image: cr.agentgateway.dev/agentgateway:v1.6.0
+    depends_on:
+      agent-a:
+        condition: service_healthy
+      agent-b:
+        condition: service_healthy
+      banking-mcp:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-18080}:8080"
+      - "127.0.0.1:${A2A_HOST_PORT:-18081}:8081"
+      - "127.0.0.1:${MCP_HOST_PORT:-18082}:8082"
+    volumes:
+      - ${AG_CONFIG_PATH:-/tmp/solo-agentgateway-unified-config}:/etc/agentgateway:ro
+    command: ["-f", "/etc/agentgateway/config.yaml"]
+    networks:
+      - unified-private
+
+networks:
+  unified-private:
+    driver: bridge

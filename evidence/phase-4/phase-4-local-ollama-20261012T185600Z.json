@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-10-12T18:56:00Z",
+  "source": "local-ollama",
+  "model_name": "qwen3:8b",
+  "focused_test_count": 8,
+  "focused_test_outcome": "passed",
+  "live_smoke_passed": true,
+  "live_smoke_gateway_routed": true,
+  "live_smoke_delegation_once": true,
+  "live_smoke_agent_b_private": true,
+  "live_smoke_shared_flow_id": true,
+  "sanitized_flow_event_names": [
+    "agent_a.request.received",
+    "agent_a.delegation.started",
+    "a2a.agent_card.resolved",
+    "a2a.message.sending",
+    "a2a.message.response_received",
+    "agent_a.delegation.completed",
+    "agent_a.response.completed",
+    "agent_b.a2a.request.received",
+    "agent_b.a2a.response.completed"
+  ],
+  "overall_status": "complete"
+}
