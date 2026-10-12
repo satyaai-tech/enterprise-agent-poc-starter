@@ -1,0 +1,38 @@
+services:
+  mock-agent-b:
+    build:
+      context: ./mock-agent-b
+    environment:
+      TENANT_ID: ${TENANT_ID:-11111111-2222-3333-4444-555555666666}
+      ISSUER: ${ISSUER:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/v2.0}
+      EXPECTED_AUDIENCE: ${EXPECTED_AUDIENCE:-api://agent-b-example}
+      EXPECTED_SCOPE: ${EXPECTED_SCOPE:-AgentB.Access}
+      AUTHORIZED_CLIENT: ${AUTHORIZED_CLIENT:-synthetic-agent-a}
+      JWKS_URL: ${JWKS_URL:-}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=2).read()"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - solo-a2a-live
+
+  agentgateway:
+    image: cr.agentgateway.dev/agentgateway:v1.6.0
+    depends_on:
+      mock-agent-b:
+        condition: service_healthy
+    ports:
+      - "${HOST_PORT:-18081}:8080"
+    volumes:
+      - ${AG_CONFIG_PATH:-/tmp/solo-agentgateway-live-config.yaml}:/etc/agentgateway/config.yaml:ro
+    command: ["-f", "/etc/agentgateway/config.yaml"]
+    networks:
+      - solo-a2a-live
+
+networks:
+  solo-a2a-live:
+    driver: bridge

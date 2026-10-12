@@ -1,0 +1,15 @@
+{
+  "a2a_message_completed": true,
+  "agent_b_defense_in_depth_verified": true,
+  "device_login_completed": true,
+  "error_category": "NONE",
+  "gateway_agent_a_client_verified": true,
+  "gateway_agent_b_audience_verified": true,
+  "obo_exchange_completed": true,
+  "same_delegated_user_verified": true,
+  "status": "PASS",
+  "timestamp_utc": "2026-10-12T03:19:20.805361+00:00",
+  "token_a_rejected_at_agent_b_boundary": true,
+  "token_a_validated": true,
+  "token_b_validated": true
+}

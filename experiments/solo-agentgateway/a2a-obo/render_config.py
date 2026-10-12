@@ -19,6 +19,7 @@ def render() -> str:
     expected_scope = required("EXPECTED_SCOPE", default="AgentB.Access")
     authorized_client = required("AUTHORIZED_CLIENT", default="synthetic-agent-a")
     config_path = Path(required("AG_CONFIG_PATH", default="/tmp/agentgateway-config.yaml"))
+    jwks_url = os.environ.get("JWKS_URL", "http://jwks-fixture:8081/.well-known/jwks.json")
 
     auth_policy = (
         f"jwt.iat > 0 && jwt.tid == '{tenant_id}' && "
@@ -32,7 +33,7 @@ def render() -> str:
         audiences:
           - "{audience}"
         jwks:
-          url: "http://jwks-fixture:8081/.well-known/jwks.json"
+          url: "{jwks_url}"
         jwtValidationOptions:
           requiredClaims:
             - exp
