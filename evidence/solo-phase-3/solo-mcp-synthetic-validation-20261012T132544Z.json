@@ -1,0 +1,75 @@
+{
+  "source": "synthetic-local",
+  "timestamp_utc": "2026-10-12T13:25:44Z",
+  "status": "PASS",
+  "tests": [
+    {
+      "name": "test_compose_config_validation",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_valid_tool_call",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_scopes_filter_tool_discovery_and_direct_calls",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_write_requires_write_scope",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_rejects_wrong_account_owner",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_rejects_missing_confirmation_without_mutation",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_rejects_zero_amount_without_mutation",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_rejects_negative_amount_without_mutation",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_rejects_missing_idempotency_key_without_mutation",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_replay_uses_one_mutation_only",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_conflicting_idempotency_key_does_not_mutate_again",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_rejects_agent_b_audience_before_backend_tool_handling",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_rejects_wrong_agent_b_identity_before_backend_tool_handling",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_rejects_invalid_jwt_matrix",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_write_idempotency_replay_and_conflict_are_rejected",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_unknown_tool_is_denied",
+      "pass": true
+    },
+    {
+      "name": "test_solo_agentgateway_mcp_missing_token_rejected",
+      "pass": true
+    }
+  ]
+}
