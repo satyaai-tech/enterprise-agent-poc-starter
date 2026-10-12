@@ -2,17 +2,17 @@
 
 ## 1. Objective
 
-Evaluate whether Solo’s open-source agentgateway can provide three distinct gateway roles:
+Evaluate whether Solo’s open-source agentgateway can provide three distinct gateway roles as the selected primary POC path:
 
 1. Northbound API gateway
 2. Agent-to-agent A2A gateway
 3. MCP gateway
 
-This is an evaluation track and does not replace the approved Kong architecture unless future evidence supports that decision.
+Solo is now the selected primary POC direction. Kong Phase 0 remains preserved as historical and reference evidence only.
 
 ## 2. Preserved Kong profile
 
-Document this architecture:
+Document this architecture as historical reference only:
 
 Notebook
 → Kong API Gateway
@@ -23,11 +23,11 @@ Notebook
 → MCP gateway
 → banking MCP mock server
 
-The completed Phase 0 Kong and external-authorizer evidence remains unchanged.
+The completed Phase 0 Kong and external-authorizer evidence remains unchanged and is retained for historical context.
 
-## 3. Alternative Solo profile
+## 3. Selected Solo profile
 
-Document this architecture:
+Document this architecture as the active POC path:
 
 Notebook
 → Solo agentgateway instance 1: API edge
@@ -44,6 +44,8 @@ Three separately configured gateway instances are preferred because they provide
 - independent ports and logs
 - reduced blast radius
 - easier testing and comparison
+
+The Solo path is the selected primary direction; it is not a production certification claim.
 
 ## 4. Shared components
 
@@ -89,9 +91,9 @@ Implementation may initially remain under `experiments/solo-agentgateway/` until
 
 ## 6. Phased implementation
 
-### Solo Phase 1 — API edge
+### Solo Phase 1 — API edge (COMPLETE)
 
-Complete the existing isolated API-edge spike:
+The isolated API-edge spike is complete with synthetic local evidence:
 
 Synthetic client
 → Solo agentgateway
@@ -112,16 +114,29 @@ Required validation:
 - rejected requests proven not to reach Agent A
 - only the gateway host port exposed
 
-### Solo Phase 2 — A2A and OBO
+### Solo Phase 2 — A2A and OBO (COMPLETE)
 
-Implement:
+The local Entra-backed A2A/OBO validation is complete with both synthetic and live evidence:
 
 Agent A
-→ Agent A performs Entra OBO
+→ Agent A performs Entra OBO in application code
 → Solo A2A gateway
 → Agent B
 
 Acceptance criteria:
+
+- device-code login succeeds locally
+- Token A is validated for Agent A
+- Agent A performs OBO for Agent B
+- Token B is validated for Agent B
+- same delegated-user continuity is verified
+- Solo agentgateway authorization succeeds
+- Agent B defense-in-depth validation succeeds
+- Token A is rejected at the Agent B boundary
+- successful A2A message delivery is observed
+- Docker cleanup runs automatically after each run
+
+The remaining roadmap remains exactly as follows.
 
 - Agent A receives a delegated Agent A token
 - Agent A performs OBO for Agent B
@@ -173,14 +188,19 @@ Connect:
 
 Document Docker Desktop networking and when `host.docker.internal` is required to reach host-based Ollama or agents.
 
-### Solo Phase 5 — End-to-end comparison
+### Solo Phase 5 — End-to-end Solo validation
 
-Run the same user scenarios through both profiles:
+Run the complete Solo flow end-to-end:
 
-1. Kong profile
-2. Solo profile
+1. Jupyter Notebook
+2. Solo agentgateway API edge
+3. Agent A using Google ADK and local Ollama
+4. Solo agentgateway A2A boundary
+5. Agent B using Google ADK and local Ollama
+6. Solo agentgateway MCP boundary
+7. banking MCP mock server
 
-Compare:
+Validate:
 
 - identity validation
 - Entra compatibility
@@ -193,10 +213,9 @@ Compare:
 - configuration complexity
 - local Docker networking
 - operational isolation
-- external-authorizer requirement
 - verified limitations
 
-Do not declare a winner until both profiles have equivalent local evidence.
+This is validation of the complete Solo flow, not a Kong-versus-Solo comparison. Do not claim production readiness.
 
 ## 7. Evidence rules
 
@@ -229,9 +248,4 @@ Do not include Kubernetes, production deployment, high availability, production 
 
 ## 10. Final deliverable
 
-The completed POC should allow the same notebook, agents, identity flow, Ollama model, and banking MCP server to run behind either:
-
-- the preserved Kong-based profile, or
-- the alternative all-Solo agentgateway profile
-
-The result must be an evidence-backed comparison, not an automatic replacement decision.
+The completed POC should allow the same notebook, agents, identity flow, Ollama model, and banking MCP server to run behind the selected all-Solo architecture. The result must be an evidence-backed local validation of the full Solo flow, not a production certification claim.

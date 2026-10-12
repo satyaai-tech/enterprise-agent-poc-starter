@@ -1,18 +1,18 @@
 # Gateway and Routing Design
 
-“Agent Gateway” describes two architectural roles. Phase 0 must select and verify specific open-source software and versions; this document makes no product capability claim.
+“Agent Gateway” describes the gateway role in the active Solo architecture. The historical Kong Phase 0 design remains in the repository as reference evidence only; this document reflects the active all-Solo POC path and does not claim unsupported product capabilities.
 
 ## Logical routes
 
 | Hop | Caller location | Target location | Addressing rule | Intended security |
 |---|---|---|---|---|
-| Notebook → Kong | Mac host | Docker | `http://localhost:<kong-published-port>` during local development | User bearer token; TLS decision documented |
-| Kong → Agent A | Docker | Mac host | `http://host.docker.internal:<agent-a-port>` | Verified token enforcement before routing; protected upstream |
+| Notebook → Solo API edge | Mac host | Docker | `http://localhost:<api-edge-published-port>` during local development | User bearer token; TLS decision documented |
+| Solo API edge → Agent A | Docker | Mac host | `http://host.docker.internal:<agent-a-port>` | Verified token enforcement before routing; protected upstream |
 | Agent A → Ollama | Mac host | Mac host | `http://localhost:<ollama-port>` | Local-only bind where possible; model is not an authorizer |
-| Agent A → A2A gateway | Mac host | Docker | `http://localhost:<a2a-published-port>` | B-audience delegated token or verified equivalent |
-| A2A gateway → Agent B | Docker | Mac host | `http://host.docker.internal:<agent-b-port>` | Authenticated route; Agent B revalidates authorization |
-| Agent B → MCP gateway | Mac host | Docker | `http://localhost:<mcp-gateway-published-port>` or verified supported transport | Bound identity context and tool policy |
-| MCP gateway → banking mock | Docker | Mac host | `http://host.docker.internal:<banking-mock-port>` or verified supported transport | Least-privilege tool call; mock rechecks policy |
+| Agent A → Solo A2A boundary | Mac host | Docker | `http://localhost:<a2a-published-port>` | B-audience delegated token or verified equivalent |
+| Solo A2A boundary → Agent B | Docker | Mac host | `http://host.docker.internal:<agent-b-port>` | Authenticated route; Agent B revalidates authorization |
+| Agent B → Solo MCP boundary | Mac host | Docker | `http://localhost:<mcp-gateway-published-port>` or verified supported transport | Bound identity context and tool policy |
+| Solo MCP boundary → banking mock | Docker | Mac host | `http://host.docker.internal:<banking-mock-port>` or verified supported transport | Least-privilege tool call; mock rechecks policy |
 
 If Agent A, B, or the banking mock later move into Docker, address them by Compose service name on a user-defined network. Do not retain `host.docker.internal` blindly after topology changes.
 
@@ -22,7 +22,7 @@ Inside a container, `localhost` identifies that container. On Docker Desktop for
 
 From the Mac host, use `localhost:<published-port>` to reach a container port published by Docker Desktop. Publishing a port is an exposure decision and must be listed in the threat model.
 
-## Northbound Kong route
+## Northbound Solo API edge route
 
 Target behavior:
 
@@ -30,10 +30,10 @@ Target behavior:
 - Reject missing or invalid tokens before forwarding.
 - Preserve or generate a correlation ID using a strict format.
 - Strip spoofable identity headers from the client.
-- Add only identity context produced by a trusted validation mechanism, and protect the Kong-to-A hop from header spoofing/bypass.
+- Add only identity context produced by a trusted validation mechanism, and protect the API-edge-to-Agent-A hop from header spoofing/bypass.
 - Apply body, header, and timeout limits.
 
-Kong OSS implementation remains blocked on the validation gate in `entra-identity.md`. Do not write configuration that merely decodes a JWT or checks one claim and label it complete validation.
+The historical Kong OSS implementation remains blocked on the validation gate in `entra-identity.md`. Do not write Solo configuration that merely decodes a JWT or checks one claim and label it complete validation.
 
 ## A2A gateway selection checklist
 

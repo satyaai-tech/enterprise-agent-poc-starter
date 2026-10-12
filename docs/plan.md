@@ -1,3 +1,5 @@
+> Legacy notice: this document is the preserved original Kong-oriented plan. It is historical and reference material only. The active roadmap is [solo-full-poc-plan.md](solo-full-poc-plan.md).
+
 # Phased Implementation Plan and Acceptance Tests
 
 No phase may be called complete without the listed evidence. Phase prompts under `.github/prompts/` guide Copilot; they do not override these gates.

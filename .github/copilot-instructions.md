@@ -2,12 +2,22 @@
 
 ## Repository purpose
 
-This repository begins as documentation and empty scaffolding for a local enterprise-agent POC. Follow `docs/plan.md` phase by phase. Do not skip acceptance gates.
+This repository is a local enterprise-agent POC centered on the all-Solo architecture. Follow the active plan in [docs/solo-full-poc-plan.md](../docs/solo-full-poc-plan.md). Preserve the historical Kong material as reference only and do not skip the evidence gates for the active Solo roadmap.
+
+## Active plan and phase sequence
+
+- Active plan: [docs/solo-full-poc-plan.md](../docs/solo-full-poc-plan.md)
+- Active gateway: Solo agentgateway as the primary POC gateway
+- Historical/reference work: Kong and prior Phase 0 materials remain preserved for comparison only
+- Active remaining sequence:
+  1. Phase 3: Solo MCP gateway and banking mock server
+  2. Phase 4: Google ADK agents with local Ollama
+  3. Phase 5: Jupyter end-to-end Solo demonstration
 
 ## Non-negotiable rules
 
 - Never claim an integration works without a pinned version, primary-source support, and local evidence.
-- Treat Kong OSS validation of Microsoft Entra tokens as unverified until Phase 0 proves the exact mechanism. Do not assume enterprise OIDC plugins exist in OSS.
+- Treat Kong OSS validation of Microsoft Entra tokens as historical/reference material unless a specific active Solo decision reopens it; do not reframe earlier Kong work as the active implementation path.
 - Treat “Agent Gateway” as an architectural role until a specific open-source project and version pass the capability matrix.
 - Do not invent an “agent identity blueprint.” Use documented OAuth/OIDC behavior and label design choices as POC-specific.
 - Do not equate forwarding Agent A's access token with Entra OBO. B must receive and validate a token intended for B.
@@ -37,5 +47,5 @@ This repository begins as documentation and empty scaffolding for a local enterp
 
 ## Current state
 
-There is no application code or deployable configuration. When using the planning prompt, produce a plan only. Do not create implementation files until the user explicitly selects a phase and asks for implementation.
+The active repository path is the all-Solo architecture. When using the planning prompt, produce a plan only for the selected active phase and keep historical Kong material clearly marked as reference work. Do not create implementation files outside the selected phase and do not claim production readiness without local evidence.
 

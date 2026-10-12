@@ -1,26 +1,28 @@
 # Local Enterprise Agent POC Starter
 
-Documentation and directory scaffolding for a local, identity-aware, multi-agent banking proof of concept on macOS. This repository intentionally contains **no application code** and no deployable gateway configuration.
+Documentation, experiment scaffolding, and the active all-Solo roadmap for a local, identity-aware, multi-agent banking proof of concept on macOS. Historical Kong materials are retained as reference evidence, while the active direction is the Solo agentgateway path.
 
-## Intended request path
+## Active POC direction
+
+The active POC direction is the all-Solo architecture:
 
 ```text
 Jupyter Notebook (Mac host)
-  -> Kong OSS (Docker API gateway)
+  -> Solo agentgateway API edge
   -> Agent A (Google ADK, local; Ollama model)
-  -> open-source Agent Gateway (A2A boundary)
-  -> Agent B (Google ADK, local)
-  -> Agent Gateway (MCP boundary)
+  -> Solo agentgateway A2A boundary
+  -> Agent B (Google ADK, local; Ollama model)
+  -> Solo agentgateway MCP boundary
   -> local MCP banking mock server (read/write tools)
 ```
 
-Microsoft Entra ID supplies a test user and separate registrations for Agent A and Agent B. The target design tests user-token validation at the northbound gateway and OAuth 2.0 On-Behalf-Of (OBO) delegation from A toward B.
+Microsoft Entra ID supplies a test user and separate registrations for Agent A and Agent B. The active design tests user-token validation at the northbound API edge, Agent A to Agent B OBO in application code, and independent validation at the Solo agentgateway boundaries before routing and tool execution.
 
 ## Important status and constraints
 
-- This is a planning scaffold, not a working implementation.
-- Kong OSS support for the required Entra/OIDC validation is **not assumed**. The team must verify a supported OSS-compatible method or select a documented alternative before implementing protected routes.
-- OBO, workload/agent identity, A2A policy enforcement, and MCP authorization are hypotheses to validate, not established capabilities of the selected components.
+- This repository retains the Kong Phase 0 work as historical/reference evidence only. Kong is not part of the active runtime path for the selected POC direction.
+- The all-Solo architecture is the active POC direction and the primary path for ongoing implementation and validation.
+- OBO, workload/agent identity, A2A policy enforcement, and MCP authorization remain local POC validations, not production certification.
 - “Agent Gateway” is a role in this design until a specific open-source project and release are selected and tested. A product with that phrase in its name is not implicitly endorsed.
 - The banking service is a local mock. It must never hold real credentials, accounts, or financial data.
 - Macaw is explicitly deferred from this POC.
@@ -28,18 +30,28 @@ Microsoft Entra ID supplies a test user and separate registrations for Agent A a
 ## Start here
 
 1. Read [docs/architecture.md](docs/architecture.md).
-2. Work through the gates in [docs/plan.md](docs/plan.md).
+2. Follow the active roadmap in [docs/solo-full-poc-plan.md](docs/solo-full-poc-plan.md).
 3. Resolve Entra choices in [docs/entra-identity.md](docs/entra-identity.md).
 4. Select and verify gateways using [docs/gateway-routing.md](docs/gateway-routing.md).
 5. Use [docs/testing.md](docs/testing.md) as the evidence checklist.
 6. Give GitHub Copilot the kickoff prompt below, then use the phase prompts in `.github/prompts/` one phase at a time.
+
+## Active plan and current phase
+
+Use [docs/solo-full-poc-plan.md](docs/solo-full-poc-plan.md) as the active roadmap for the project. The repository is not being reset to Phase 0; the active sequence is:
+
+- Phase 3: Solo MCP gateway and banking mock server
+- Phase 4: Google ADK agents with local Ollama
+- Phase 5: Jupyter end-to-end Solo demonstration
+
+The historical Kong work remains in the repository as reference material only and should not be treated as the active implementation path.
 
 ## Exact Copilot kickoff prompt
 
 Copy this text exactly into GitHub Copilot Chat from the repository root:
 
 ```text
-Read README.md, all files under docs/, and .github/copilot-instructions.md before proposing changes. This repository is documentation and scaffolding only right now. First produce a written implementation plan mapped to the phases and acceptance tests in docs/plan.md. Identify every unverified assumption, especially Kong OSS support for Microsoft Entra token validation, the selected open-source Agent Gateway's A2A and MCP capabilities, and Microsoft Entra OBO from Agent A to Agent B. Do not generate application code, Docker configuration, identity secrets, or cloud resources in this step. Do not claim any capability is verified without a cited primary source and local test evidence. Preserve host.docker.internal for container-to-Mac-host traffic. Macaw is out of scope. End with blocking decisions, risks, and the exact evidence required to pass Phase 0.
+Read README.md, docs/solo-full-poc-plan.md, docs/architecture.md, docs/testing.md, and .github/copilot-instructions.md before proposing changes. Treat the all-Solo architecture as the active POC path. Follow the active roadmap in docs/solo-full-poc-plan.md and focus on the next phase: Phase 3, the Solo MCP gateway and banking mock server. Preserve the historical Kong material as reference only; do not restart Phase 0 or re-open the Kong investigation as an active task. Keep the security and evidence guardrails in place: no real credentials, no raw tokens, no personal identity claims, no live Entra calls or live docker execution during planning, and no unsupported production claims. Do not generate implementation code for phases outside the selected task. End with the assumptions, decisions, files to change, evidence needed for the next gate, and any remaining risks.
 ```
 
 The same prompt is stored in `.github/prompts/plan-project.prompt.md`.
@@ -63,7 +75,7 @@ docs/                         Architecture, identity, routing, plan, and test gu
 .github/copilot-instructions.md
 .github/prompts/              Planning prompt plus one prompt per delivery phase
 notebooks/                    Future notebook client
-infra/kong/                   Future Kong OSS assets
+infra/kong/                   Historical Kong reference assets
 infra/agent-gateway-a2a/      Future A2A gateway assets
 infra/agent-gateway-mcp/      Future MCP gateway assets
 agents/agent-a/               Future ADK Agent A
@@ -74,7 +86,7 @@ evidence/                     Future redacted proof collected at each gate
 scripts/                      Future local developer helpers
 ```
 
-Empty directories are retained with `.gitkeep` files. No runtime is implemented yet.
+The repository retains historical reference material for the earlier Kong path and the active Solo implementation plan for the current POC direction.
 
 ## Definition of a safe POC
 
