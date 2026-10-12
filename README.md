@@ -46,14 +46,15 @@ Completed:
 - Phase 1: Solo API edge
 - Phase 2: Solo A2A gateway and Entra OBO
 - Phase 3: Solo MCP gateway and banking mock server
+- Phase 4: Google ADK agents with local Ollama
 
 Current phase:
 
-- Phase 4: Google ADK agents with local Ollama
+- Phase 5: Jupyter end-to-end Solo demonstration
 
 Remaining:
 
-- Phase 5: Jupyter end-to-end Solo demonstration
+- No later phases are currently defined beyond Phase 5.
 
 The historical Kong work remains in the repository as reference material only and is not part of the active runtime architecture.
 
@@ -62,7 +63,7 @@ The historical Kong work remains in the repository as reference material only an
 Copy this text exactly into GitHub Copilot Chat from the repository root:
 
 ```text
-Read README.md, docs/solo-full-poc-plan.md, docs/architecture.md, docs/testing.md, and .github/copilot-instructions.md before proposing changes. Treat the all-Solo architecture as the active POC path. Follow the active roadmap in docs/solo-full-poc-plan.md and focus on the next phase: Phase 3, the Solo MCP gateway and banking mock server. Preserve the historical Kong material as reference only; do not restart Phase 0 or re-open the Kong investigation as an active task. Keep the security and evidence guardrails in place: no real credentials, no raw tokens, no personal identity claims, no live Entra calls or live docker execution during planning, and no unsupported production claims. Do not generate implementation code for phases outside the selected task. End with the assumptions, decisions, files to change, evidence needed for the next gate, and any remaining risks.
+Read README.md, docs/solo-full-poc-plan.md, docs/architecture.md, docs/testing.md, and .github/copilot-instructions.md before proposing changes. Treat the all-Solo architecture as the active POC path. Follow the active roadmap in docs/solo-full-poc-plan.md and focus on the next phase: Phase 5, the Jupyter end-to-end Solo demonstration. Preserve the historical Kong material as reference only; do not restart Phase 0 or re-open the Kong investigation as an active task. Keep the security and evidence guardrails in place: no real credentials, no raw tokens, no personal identity claims, no live Entra calls or live docker execution during planning, and no unsupported production claims. Do not generate implementation code for phases outside the selected task. End with the assumptions, decisions, files to change, evidence needed for the next gate, and any remaining risks.
 ```
 
 The same prompt is stored in `.github/prompts/plan-project.prompt.md`.
