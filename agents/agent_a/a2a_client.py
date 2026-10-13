@@ -12,7 +12,7 @@ from a2a.types.a2a_pb2 import Message, Part, Role, SendMessageRequest
 from a2a.utils.constants import TransportProtocol
 
 from agents.flow_logging import get_flow_id, log_flow_event, set_flow_id
-from agents.token_provider import FileTokenProvider
+from agents.agent_a.token_b_provider import resolve_agent_a_token_b
 
 AGENT_B_A2A_URL = os.getenv("AGENT_B_A2A_URL", "http://127.0.0.1:8001")
 A2A_CLIENT_INVOCATION_COUNT = 0
@@ -40,9 +40,9 @@ def _public_a2a_headers() -> dict[str, str]:
     return {"X-Flow-ID": _ensure_flow_id()}
 
 
-def _protected_a2a_headers() -> dict[str, str]:
+async def _protected_a2a_headers() -> dict[str, str]:
     headers = _public_a2a_headers()
-    headers["Authorization"] = f"Bearer {FileTokenProvider.from_env('TOKEN_B_FILE').token}"
+    headers["Authorization"] = f"Bearer {await resolve_agent_a_token_b()}"
     return headers
 
 
@@ -186,7 +186,7 @@ async def send_agent_b_message(message_text: str, base_url: str = AGENT_B_A2A_UR
         success=True,
     )
     A2A_CLIENT_INVOCATION_COUNT += 1
-    http_client = httpx.AsyncClient(timeout=180.0, headers=_protected_a2a_headers())
+    http_client = httpx.AsyncClient(timeout=180.0, headers=await _protected_a2a_headers())
     client_config = ClientConfig(
         streaming=False,
         httpx_client=http_client,

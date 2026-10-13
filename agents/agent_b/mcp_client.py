@@ -7,8 +7,8 @@ from typing import Any
 
 import httpx
 
-from agents.flow_logging import get_flow_id, log_flow_event
-from agents.token_provider import FileTokenProvider
+from agents.flow_logging import extract_raw_user_identity, get_flow_id, log_flow_event
+from agents.agent_b.token_c_provider import TokenCResolutionError, resolve_agent_b_token_c
 
 MCP_GATEWAY_URL = os.getenv("BANKING_MCP_URL", "http://agentgateway:8082/mcp")
 MCP_PROTOCOL_VERSION = "2025-03-26"
@@ -86,8 +86,11 @@ async def get_account_summary(account_id: str) -> str:
     """Read an account balance via the local MCP gateway using Token C."""
     flow_id = get_flow_id()
     try:
-        token = FileTokenProvider.from_env("TOKEN_C_FILE").token
-        log_flow_event("mcp_initialize_start", "agent-b.mcp_client", flow_id=flow_id, http_path="/mcp", success=True)
+        token = await resolve_agent_b_token_c()
+        identity_fields = {}
+        if os.getenv("POC_LOG_RAW_USER_ID") == "true":
+            identity_fields = extract_raw_user_identity(token=token)
+        log_flow_event("mcp_initialize_start", "agent-b.mcp_client", flow_id=flow_id, http_path="/mcp", success=True, **identity_fields)
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             init_payload = {
@@ -157,6 +160,15 @@ async def get_account_summary(account_id: str) -> str:
                 raise ValueError("MCP tool call response is missing summary text")
             log_flow_event("mcp_tool_call_complete", "agent-b.mcp_client", flow_id=flow_id, http_path="/mcp", success=True)
             return summary_text
+    except TokenCResolutionError as exc:
+        log_flow_event(
+            "mcp_failure",
+            "agent-b.mcp_client",
+            flow_id=flow_id,
+            http_path="/mcp",
+            success=False,
+        )
+        raise RuntimeError(str(exc)) from exc
     except Exception:
         log_flow_event("mcp_failure", "agent-b.mcp_client", flow_id=flow_id, http_path="/mcp", success=False)
         raise

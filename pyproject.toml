@@ -14,6 +14,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+  "gradio>=5.0.0,<7.0.0",
+  "ipykernel>=7.4.0",
+  "jupyterlab>=4.6.4",
   "pytest>=8.3.3,<9.0",
 ]
 

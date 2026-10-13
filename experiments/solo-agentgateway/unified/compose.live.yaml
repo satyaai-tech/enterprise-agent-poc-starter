@@ -1,0 +1,133 @@
+services:
+  agent-a:
+    image: solo-agentgateway-unified-agent-a:local
+    build:
+      context: ../../../
+      dockerfile: experiments/solo-agentgateway/adk-a2a/Dockerfile
+    command:
+      - sh
+      - -lc
+      - >-
+        PYTHONPATH=/workspace uvicorn agents.agent_a.http_app:app --host 0.0.0.0 --port 8000
+    environment:
+      PYTHONPATH: /workspace
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      OLLAMA_API_BASE: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
+      AGENT_B_A2A_URL: http://agentgateway:8081
+      AGENT_A_TOKEN_B_MODE: obo
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:?ENTRA_TENANT_ID must be set}
+      ENTRA_AGENT_A_CLIENT_ID: ${ENTRA_AGENT_A_CLIENT_ID:?ENTRA_AGENT_A_CLIENT_ID must be set}
+      ENTRA_AGENT_A_CLIENT_SECRET_FILE: /run/secrets/agent-a-client-secret
+      ENTRA_AGENT_B_SCOPE: ${ENTRA_AGENT_B_SCOPE:?ENTRA_AGENT_B_SCOPE must be set}
+      POC_LOG_RAW_USER_ID: ${POC_LOG_RAW_USER_ID:-false}
+      TENANT_ID: ${TENANT_ID:-11111111-2222-3333-4444-555555666666}
+      ISSUER: ${ISSUER:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/v2.0}
+      API_AUDIENCE: ${API_AUDIENCE:-api://agent-a-example}
+      A2A_AUDIENCE: ${A2A_AUDIENCE:-api://agent-b-example}
+      API_SCOPE: ${API_SCOPE:-AgentA.Access}
+      A2A_SCOPE: ${A2A_SCOPE:-AgentB.Access}
+      API_AUTHORIZED_CLIENT: ${API_AUTHORIZED_CLIENT:-synthetic-agent-a}
+      A2A_AUTHORIZED_CLIENT: ${A2A_AUTHORIZED_CLIENT:-synthetic-agent-a}
+      JWKS_URL: ${JWKS_URL:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/discovery/v2.0/keys}
+    volumes:
+      - ${ENTRA_AGENT_A_CLIENT_SECRET_FILE:?ENTRA_AGENT_A_CLIENT_SECRET_FILE must be set}:/run/secrets/agent-a-client-secret:ro
+    expose:
+      - "8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - unified-private
+
+  agent-b:
+    image: solo-agentgateway-unified-agent-b:local
+    build:
+      context: ../../../
+      dockerfile: experiments/solo-agentgateway/adk-a2a/Dockerfile
+    environment:
+      PYTHONPATH: /workspace
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      OLLAMA_API_BASE: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
+      A2A_HOST: 0.0.0.0
+      A2A_PORT: "8001"
+      A2A_PUBLIC_URL: http://agentgateway:8081
+      AGENT_B_TOKEN_C_MODE: ${AGENT_B_TOKEN_C_MODE:-obo}
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:-${TENANT_ID:-11111111-2222-3333-4444-555555666666}}
+      ENTRA_AGENT_B_CLIENT_ID: ${ENTRA_AGENT_B_CLIENT_ID:-agent-b-client-id}
+      ENTRA_AGENT_B_CLIENT_SECRET_FILE: /run/secrets/agent-b-client-secret
+      ENTRA_BANKING_SCOPE: ${ENTRA_BANKING_SCOPE:-${BANKING_SCOPE:-Banking.Read}}
+      TENANT_ID: ${TENANT_ID:-11111111-2222-3333-4444-555555666666}
+      ISSUER: ${ISSUER:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/v2.0}
+      A2A_AUDIENCE: ${A2A_AUDIENCE:-api://agent-b-example}
+      MCP_AUDIENCE: ${MCP_AUDIENCE:-api://banking-mock}
+      A2A_AUTHORIZED_CLIENT: ${A2A_AUTHORIZED_CLIENT:-synthetic-agent-a}
+      MCP_AUTHORIZED_CLIENT: ${MCP_AUTHORIZED_CLIENT:-synthetic-agent-b}
+      BANKING_MCP_URL: http://agentgateway:8082/mcp
+      JWKS_URL: ${JWKS_URL:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/discovery/v2.0/keys}
+      POC_LOG_RAW_USER_ID: ${POC_LOG_RAW_USER_ID:-false}
+    volumes:
+      - ${ENTRA_AGENT_B_CLIENT_SECRET_FILE:?ENTRA_AGENT_B_CLIENT_SECRET_FILE must be set}:/run/secrets/agent-b-client-secret:ro
+    expose:
+      - "8001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/.well-known/agent-card.json', timeout=5).read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - unified-private
+
+  banking-mcp:
+    image: solo-agentgateway-unified-banking-mcp:local
+    build:
+      context: ../mcp/mock-banking
+    environment:
+      JWKS_FILE: /data/jwks.json
+      ISSUER: ${BANKING_ISSUER:-${ISSUER:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/v2.0}}
+      EXPECTED_AUDIENCE: ${BANKING_AUDIENCE:-${MCP_AUDIENCE:-api://banking-mock}}
+      EXPECTED_SCOPE: ${BANKING_SCOPE:-Banking.Read}
+      AUTHORIZED_CLIENT: ${BANKING_AUTHORIZED_CLIENT:-${MCP_AUTHORIZED_CLIENT:-synthetic-agent-b}}
+      BANKING_TEST_USER_OID: ${BANKING_TEST_USER_OID:-user-12345}
+      TENANT_ID: ${TENANT_ID:-11111111-2222-3333-4444-555555666666}
+      JWKS_URL: ${JWKS_URL:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/discovery/v2.0/keys}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5).read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - unified-private
+
+  agentgateway:
+    image: cr.agentgateway.dev/agentgateway:v1.6.0
+    depends_on:
+      agent-a:
+        condition: service_healthy
+      agent-b:
+        condition: service_healthy
+      banking-mcp:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-18080}:8080"
+      - "127.0.0.1:${A2A_HOST_PORT:-18081}:8081"
+      - "127.0.0.1:${MCP_HOST_PORT:-18082}:8082"
+    volumes:
+      - ${AG_CONFIG_PATH:-/tmp/solo-agentgateway-unified-live-config}:/etc/agentgateway:ro
+    command: ["-f", "/etc/agentgateway/config.yaml"]
+    networks:
+      - unified-private
+
+networks:
+  unified-private:
+    driver: bridge

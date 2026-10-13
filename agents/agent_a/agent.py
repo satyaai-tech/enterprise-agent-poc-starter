@@ -23,25 +23,27 @@ def get_delegation_tool_invocation_count() -> int:
 
 AGENT_A_NAME = "agent_a"
 AGENT_A_DESCRIPTION = (
-    "Local Agent A for the Solo Phase 4 slice. It responds to user prompts using "
-    "the local Ollama model and does not make banking, authorization, or delegated "
-    "identity decisions."
+    "Local orchestration agent for the Solo Phase 5 read-only flow. It handles "
+    "general prompts locally and routes approved read-only banking requests to Agent B."
 )
 AGENT_A_INSTRUCTION = (
-    "You are Agent A in the Solo Phase 4 local test environment. "
-    "Respond to the current prompt in plain language. "
-    "Do not make banking, authorization, or identity decisions. "
-    "If the user explicitly asks you to delegate a message to Agent B over the "
-    "local A2A endpoint, use the local Agent B delegation tool and return Agent "
-    "B's response. When the Agent B delegation tool returns exactly PASS, return "
+    "You are Agent A in the Solo Phase 5 local read-only environment. "
+    "Respond to general non-banking prompts locally in plain language. "
+    "For a read-only banking request, including an account balance or account summary, "
+    "always use the local Agent B delegation tool and return Agent B's response. "
+    "Do not require the user to mention Agent B, delegation, A2A, MCP, or tool names. "
+    "Never answer banking-data questions from your own knowledge. "
+    "Do not delegate requests that create a transfer, move funds, mutate data, or perform "
+    "another write; state that this POC supports read-only banking requests only. "
+    "Do not make authorization or identity decisions; those are enforced outside the model. "
+    "When the Agent B delegation tool returns exactly PASS, return "
     "exactly PASS and nothing else. Do not add a prefix, suffix, explanation, "
-    "quotation, or formatting. Otherwise, do not perform A2A, MCP, gateway, or "
-    "tool operations. Keep your answer brief and factual."
+    "quotation, or formatting. Keep your answer brief and factual."
 )
 
 
 async def delegate_to_agent_b(message: str) -> str:
-    """Use this tool when the user explicitly asks Agent A to delegate a message to Agent B over the local A2A endpoint. It sends the message to Agent B and returns Agent B's response."""
+    """Automatically use this tool for approved read-only banking requests such as an account balance or account summary. Do not use it for transfers, mutations, or other writes. It sends the request to Agent B and returns Agent B's response."""
     global DELEGATION_TOOL_CALL_COUNT
     DELEGATION_TOOL_CALL_COUNT += 1
     started_at = time.perf_counter()

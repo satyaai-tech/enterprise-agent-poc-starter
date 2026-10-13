@@ -170,9 +170,18 @@ def _debug_snapshot() -> dict[str, Any]:
     }
 
 
-def _account_owner_for(subject: str, account_id: str) -> bool:
+def _effective_account_owner(account_id: str) -> str:
+    configured_owner = (os.environ.get("BANKING_TEST_USER_OID") or "").strip()
+    if configured_owner:
+        return configured_owner
     owner = _ACCOUNT_OWNERS.get(account_id)
-    return owner is not None and owner == subject
+    if owner:
+        return owner
+    return "user-12345"
+
+
+def _account_owner_for(subject: str, account_id: str) -> bool:
+    return _effective_account_owner(account_id) == subject
 
 
 def jsonrpc_error(code: int, message: str, *, request_id: str | None = None) -> dict[str, Any]:
@@ -290,7 +299,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._respond_json(403, jsonrpc_error(-32005, "Missing Banking.Write scope", request_id=request_id))
                 return
 
-            subject = str(principal.get("sub") or principal.get("oid") or "")
+            subject = str(principal.get("oid") or principal.get("sub") or "")
 
             if tool_name == "get_account_summary":
                 account_id = str(arguments.get("account_id", "acct-1001"))

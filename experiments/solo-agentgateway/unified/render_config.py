@@ -115,6 +115,9 @@ routes:
           pathPrefix: /
     backends:
       - host: "agent-a:8000"
+        policies:
+          backendAuth:
+            passthrough: {{}}
 
   - name: agent-b-card
     gateways: [a2a]
@@ -131,6 +134,9 @@ routes:
           pathPrefix: /
     backends:
       - host: "agent-b:8001"
+        policies:
+          backendAuth:
+            passthrough: {{}}
 
   - name: banking-health
     gateways: [mcp]

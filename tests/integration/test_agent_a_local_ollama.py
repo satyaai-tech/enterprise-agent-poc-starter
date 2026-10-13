@@ -43,7 +43,10 @@ def test_agent_a_name_and_instruction(monkeypatch):
     assert agent.name == AGENT_A_NAME
     assert AGENT_A_NAME in agent.name.lower()
     assert "Agent A" in AGENT_A_INSTRUCTION
-    assert "local a2a endpoint" in AGENT_A_INSTRUCTION.lower()
+    assert "read-only banking request" in AGENT_A_INSTRUCTION.lower()
+    assert "always use the local Agent B delegation tool" in AGENT_A_INSTRUCTION
+    assert "Do not require the user to mention Agent B" in AGENT_A_INSTRUCTION
+    assert "create a transfer" in AGENT_A_INSTRUCTION
     assert (
         "When the Agent B delegation tool returns exactly PASS, return exactly PASS and nothing else. "
         "Do not add a prefix, suffix, explanation, quotation, or formatting."

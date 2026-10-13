@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -61,7 +62,7 @@ def test_agent_a_reads_only_token_b_file(tmp_path, monkeypatch):
     monkeypatch.delenv("TOKEN_A_FILE", raising=False)
     monkeypatch.delenv("TOKEN_C_FILE", raising=False)
 
-    headers = _protected_a2a_headers()
+    headers = asyncio.run(_protected_a2a_headers())
     assert headers["Authorization"] == "Bearer token-b-value"
     assert "Authorization" in headers
 

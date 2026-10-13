@@ -21,7 +21,8 @@ from functools import wraps
 from google.adk.a2a.utils.agent_card_builder import AgentCardBuilder
 from google.adk.a2a.utils.agent_to_a2a import to_a2a
 
-from agents.flow_logging import get_flow_id, log_flow_event, set_flow_id
+from agents.flow_logging import extract_raw_user_identity, get_flow_id, log_flow_event, set_flow_id
+from agents.agent_b.delegated_token_context import reset_delegated_token_b, set_delegated_token_b
 from agents.agent_b.agent import build_agent_b
 
 A2A_HOST = os.getenv("A2A_HOST", "127.0.0.1")
@@ -59,6 +60,26 @@ def _with_a2a_flow_logging(app):
         flow_id = headers.get("x-flow-id") or uuid.uuid4().hex[:12]
         set_flow_id(flow_id)
         path = scope.get("path", "/")
+        authorization = headers.get("authorization", "").strip()
+        delegated_token = None
+        if path != "/.well-known/agent-card.json" and authorization.lower().startswith("bearer "):
+            delegated_token = authorization.split(" ", 1)[1].strip() or None
+        context_token = set_delegated_token_b(delegated_token)
+        if delegated_token:
+            identity_fields = {}
+            if os.getenv("POC_LOG_RAW_USER_ID") == "true":
+                identity_fields = extract_raw_user_identity(token=delegated_token)
+            log_flow_event(
+                "agent_b.delegated_token.received",
+                component="agent_b",
+                flow_id=flow_id,
+                http_path=path,
+                http_status=200,
+                elapsed_ms=0,
+                success=True,
+                delegated_token_present=True,
+                **identity_fields,
+            )
         started_at = time.perf_counter()
         log_flow_event(
             "agent_b.a2a.request.received",
@@ -84,7 +105,10 @@ def _with_a2a_flow_logging(app):
                 )
             await send(message)
 
-        await app(scope, receive, send_with_logging)
+        try:
+            await app(scope, receive, send_with_logging)
+        finally:
+            reset_delegated_token_b(context_token)
 
     return wrapped
 

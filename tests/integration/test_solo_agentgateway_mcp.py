@@ -429,6 +429,31 @@ def test_solo_agentgateway_mcp_valid_tool_call(mcp_stack: dict[str, object]):
     assert body["result"]["content"][0]["text"] == "Balance for acct-1001 is 12345.67"
 
 
+def test_solo_agentgateway_mcp_uses_oid_not_sub_when_subject_differs(mcp_stack: dict[str, object]):
+    gateway_url = mcp_stack["gateway_url"]
+    token = build_token(
+        mcp_stack["private_key"],
+        tenant_id=mcp_stack["tenant_id"],
+        audience=mcp_stack["audience"],
+        scope=mcp_stack["scope"],
+        issuer=mcp_stack["issuer"],
+        authorized_client=mcp_stack["authorized_client"],
+        subject="subject-does-not-own-account",
+        overrides={"oid": mcp_stack["subject"], "preferred_username": "test.user@example.com"},
+    )
+
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {"name": "get_account_summary", "arguments": {"account_id": "acct-1001"}},
+        "id": "oid-owner-check",
+    }
+    status, body = request_json(f"{gateway_url}mcp", token=token, payload=payload)
+    assert status == 200
+    assert body["jsonrpc"] == "2.0"
+    assert body["result"]["structuredContent"]["account_id"] == "acct-1001"
+
+
 def test_solo_agentgateway_mcp_scopes_filter_tool_discovery_and_direct_calls(mcp_stack: dict[str, object]):
     gateway_url = mcp_stack["gateway_url"]
     read_only_token = build_token(
