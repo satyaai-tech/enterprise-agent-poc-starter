@@ -12,7 +12,16 @@ This repository is a local enterprise-agent POC centered on the all-Solo archite
 - Active remaining sequence:
   1. Phase 3: Solo MCP gateway and banking mock server
   2. Phase 4: Google ADK agents with local Ollama
-  3. Phase 5: Jupyter end-to-end Solo demonstration
+  3. Phase 5: Jupyter end-to-end Solo demonstration (IN PROGRESS)
+  4. Phase 6: PLANNED — MACAW policy enforcement and FastMCP-compatible Banking MCP conversion
+
+## Slice 5 status
+
+- Slice 5A: COMPLETE — documented and supported by existing read-only evidence
+- Slice 5B: Guarded live validation required before completion can be claimed
+- Slice 5C: PLANNED / NOT STARTED — Per-User Read/Write Authorization
+
+Phase 5 remains a current phase and stays IN PROGRESS until all required Slice 5C gates and evidence are recorded. No controlled-transfer capability should be described as working end to end before its evidence exists.
 
 ## Non-negotiable rules
 

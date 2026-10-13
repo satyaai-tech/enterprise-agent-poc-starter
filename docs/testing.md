@@ -44,6 +44,58 @@ Tests must prove denial behavior as well as the happy path. Record component ver
 | Replay/retry of same write | No duplicate effect |
 | Tool description/result contains hostile instructions | Treated as data; policy remains enforced |
 
+## Planned Phase 5 Slice 5C matrix
+
+Slice 5C is not started and is not a claim that write capability exists yet. The planned gates below document the minimum required evidence before Phase 5 can be marked complete.
+
+### Reader-user gates
+
+| Gate | Expected result |
+|---|---|
+| `poc-banking-reader` authenticates independently through Microsoft Entra | Successful separate login |
+| Token A/B/C preserve reader `tid` and `oid` | Accepted |
+| Token C contains `Banking.Read` | Accepted |
+| Token C contains `Banking.Reader` | Accepted |
+| Token C omits `Banking.Writer` | Accepted |
+| Reader reads own account summary | Allowed |
+| Reader discovers `create_transfer` | Denied |
+| Reader invokes `create_transfer` directly | Denied |
+| Reader transfer attempt | Rejected before mutation |
+| Reader register/mutation count | Zero |
+
+### Writer-user gates
+
+| Gate | Expected result |
+|---|---|
+| `poc-banking-writer` authenticates independently through Microsoft Entra | Successful separate login |
+| Token A/B/C preserve writer `tid` and `oid` | Accepted |
+| Token C contains `Banking.Read` and `Banking.Write` | Accepted |
+| Token C contains `Banking.Reader` and `Banking.Writer` | Accepted |
+| Writer reads own account summary | Allowed |
+| Writer discovers `create_transfer` | Allowed |
+| Explicitly confirmed transfer between owned accounts | Single mutation |
+| Duplicate request with same idempotency key | No duplicate mutation |
+| Conflicting reuse of same idempotency key | Fail closed |
+| Missing confirmation | Rejected |
+| Missing idempotency key | Rejected |
+| Non-positive or invalid amount | Rejected |
+| Transfer between unowned accounts | Rejected without mutation |
+
+### Cross-user and security gates
+
+| Gate | Expected result |
+|---|---|
+| Reader and writer have distinct `oid` values | Required |
+| One user cannot access the other user’s accounts | Denied |
+| Token, secret, JWT, or authorization header never appears in logs or evidence | Required |
+| Missing `Banking.Read`/`Banking.Write` or app-role checks | Fail closed |
+| Invalid issuer, tenant, audience, or signature | Fail closed |
+| Denied requests produce no mutation | Required |
+| Temporary Docker resources removed after validation | Required |
+| Evidence recorded under `evidence/phase-5/` | Required |
+
+The intended model is a two-user Microsoft Entra POC where read-only and write-capable identities are independently validated and never conflated. This is future work and does not replace the current read-only evidence already recorded for Slice 5A.
+
 ## Network and bypass tests
 
 - Confirm every intended route using the addressing matrix.
