@@ -9,6 +9,7 @@ from google.adk.tools.function_tool import FunctionTool
 from google.genai import types
 
 from agents.agent_a.agent import AGENT_A_INSTRUCTION, AGENT_A_NAME, build_agent_a
+from agents.agent_a.agent import delegate_to_agent_b_after_tool_callback
 from agents.agent_a.config import LocalOllamaConfig
 from agents.agent_a.smoke import _is_pass_response, _run_live_probe
 
@@ -59,6 +60,18 @@ def test_agent_a_registers_a2a_delegation_tool(monkeypatch):
     assert "delegate_to_agent_b" in tool_names
 
 
+def test_agent_a_registers_delegation_after_tool_callback(monkeypatch):
+    monkeypatch.setenv("OLLAMA_MODEL", "qwen3:8b")
+    monkeypatch.setenv("OLLAMA_API_BASE", "http://localhost:11434")
+
+    agent = build_agent_a()
+
+    assert any(
+        callback.__name__ == "delegate_to_agent_b_after_tool_callback"
+        for callback in agent.canonical_after_tool_callbacks
+    )
+
+
 def test_agent_a_tool_calls_mocked_a2a_transport(monkeypatch):
     monkeypatch.setenv("OLLAMA_MODEL", "qwen3:8b")
     monkeypatch.setenv("OLLAMA_API_BASE", "http://localhost:11434")
@@ -75,6 +88,63 @@ def test_agent_a_tool_calls_mocked_a2a_transport(monkeypatch):
 
     assert result == "PASS"
     mock_send.assert_awaited_once_with("Delegate to Agent B: Reply with PASS and nothing else.")
+
+
+def test_delegate_to_agent_b_after_tool_callback_sets_skip_summarization_on_success():
+    tool = SimpleNamespace(name="delegate_to_agent_b")
+    tool_context = SimpleNamespace(actions=SimpleNamespace(skip_summarization=None))
+    result = {"result": "Balance is 12345.67"}
+
+    returned = asyncio.run(
+        delegate_to_agent_b_after_tool_callback(
+            tool=tool,
+            args={"message": "delegate now"},
+            tool_context=tool_context,
+            tool_response=result,
+        )
+    )
+
+    assert returned is None
+    assert tool_context.actions.skip_summarization is True
+    assert result == {"result": "Balance is 12345.67"}
+
+
+def test_delegate_to_agent_b_after_tool_callback_does_not_set_skip_summarization_on_error():
+    tool = SimpleNamespace(name="delegate_to_agent_b")
+    tool_context = SimpleNamespace(actions=SimpleNamespace(skip_summarization=None))
+    result = {"error": {"message": "tool failed"}}
+
+    returned = asyncio.run(
+        delegate_to_agent_b_after_tool_callback(
+            tool=tool,
+            args={"message": "delegate now"},
+            tool_context=tool_context,
+            tool_response=result,
+        )
+    )
+
+    assert returned is None
+    assert tool_context.actions.skip_summarization is None
+    assert result == {"error": {"message": "tool failed"}}
+
+
+def test_delegate_to_agent_b_after_tool_callback_ignores_unrelated_tools():
+    tool = SimpleNamespace(name="unrelated_tool")
+    tool_context = SimpleNamespace(actions=SimpleNamespace(skip_summarization=None))
+    result = {"result": "leave me alone"}
+
+    returned = asyncio.run(
+        delegate_to_agent_b_after_tool_callback(
+            tool=tool,
+            args={"message": "delegate now"},
+            tool_context=tool_context,
+            tool_response=result,
+        )
+    )
+
+    assert returned is None
+    assert tool_context.actions.skip_summarization is None
+    assert result == {"result": "leave me alone"}
 
 
 def test_missing_configuration_fails_clearly(monkeypatch):

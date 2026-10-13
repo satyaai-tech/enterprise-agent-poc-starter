@@ -1,5 +1,25 @@
 services:
+  jwks-fixture:
+    image: solo-agentgateway-unified-jwks-fixture:local
+    build:
+      context: ../mcp/jwks-fixture
+    environment:
+      JWKS_FILE: /data/jwks.json
+    volumes:
+      - ${JWKS_FILE_DIR:-../mcp/fixtures}:/data:ro
+    expose:
+      - "8081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/.well-known/jwks.json', timeout=5).read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - unified-private
+
   agent-a:
+    image: solo-agentgateway-unified-agent-a:local
     build:
       context: ../../../
       dockerfile: experiments/solo-agentgateway/adk-a2a/Dockerfile
@@ -7,13 +27,22 @@ services:
       - sh
       - -lc
       - >-
-        PYTHONPATH=/workspace adk api_server --with_ui --host 0.0.0.0
-        --port 8000 /workspace/agents/agent_a
+        PYTHONPATH=/workspace uvicorn agents.agent_a.http_app:app --host 0.0.0.0 --port 8000
     environment:
       PYTHONPATH: /workspace
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
       OLLAMA_API_BASE: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       AGENT_B_A2A_URL: http://agentgateway:8081
+      TOKEN_B_FILE: /run/secrets/token_b
+      TENANT_ID: ${TENANT_ID:-11111111-2222-3333-4444-555555666666}
+      ISSUER: ${ISSUER:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/v2.0}
+      API_AUDIENCE: ${API_AUDIENCE:-api://agent-a-example}
+      A2A_AUDIENCE: ${A2A_AUDIENCE:-api://agent-b-example}
+      API_AUTHORIZED_CLIENT: ${API_AUTHORIZED_CLIENT:-synthetic-agent-a}
+      A2A_AUTHORIZED_CLIENT: ${A2A_AUTHORIZED_CLIENT:-synthetic-agent-a}
+      JWKS_URL: http://jwks-fixture:8081/.well-known/jwks.json
+    volumes:
+      - ${TOKEN_B_FILE:?TOKEN_B_FILE must be set}:/run/secrets/token_b:ro
     expose:
       - "8000"
     extra_hosts:
@@ -28,6 +57,7 @@ services:
       - unified-private
 
   agent-b:
+    image: solo-agentgateway-unified-agent-b:local
     build:
       context: ../../../
       dockerfile: experiments/solo-agentgateway/adk-a2a/Dockerfile
@@ -37,7 +67,18 @@ services:
       OLLAMA_API_BASE: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       A2A_HOST: 0.0.0.0
       A2A_PORT: "8001"
-      A2A_PUBLIC_URL: http://127.0.0.1:${A2A_HOST_PORT:-18081}
+      A2A_PUBLIC_URL: http://agentgateway:8081
+      TOKEN_C_FILE: /run/secrets/token_c
+      TENANT_ID: ${TENANT_ID:-11111111-2222-3333-4444-555555666666}
+      ISSUER: ${ISSUER:-https://login.microsoftonline.com/11111111-2222-3333-4444-555555666666/v2.0}
+      A2A_AUDIENCE: ${A2A_AUDIENCE:-api://agent-b-example}
+      MCP_AUDIENCE: ${MCP_AUDIENCE:-api://banking-mock}
+      A2A_AUTHORIZED_CLIENT: ${A2A_AUTHORIZED_CLIENT:-synthetic-agent-a}
+      MCP_AUTHORIZED_CLIENT: ${MCP_AUTHORIZED_CLIENT:-synthetic-agent-b}
+      BANKING_MCP_URL: http://agentgateway:8082/mcp
+      JWKS_URL: http://jwks-fixture:8081/.well-known/jwks.json
+    volumes:
+      - ${TOKEN_C_FILE:?TOKEN_C_FILE must be set}:/run/secrets/token_c:ro
     expose:
       - "8001"
     extra_hosts:
@@ -52,6 +93,7 @@ services:
       - unified-private
 
   banking-mcp:
+    image: solo-agentgateway-unified-banking-mcp:local
     build:
       context: ../mcp/mock-banking
     environment:
@@ -61,6 +103,7 @@ services:
       EXPECTED_SCOPE: ${BANKING_SCOPE:-Banking.Read Banking.Write}
       AUTHORIZED_CLIENT: ${BANKING_AUTHORIZED_CLIENT:-synthetic-agent-b}
       TENANT_ID: ${TENANT_ID:-11111111-2222-3333-4444-555555666666}
+      JWKS_URL: http://jwks-fixture:8081/.well-known/jwks.json
     volumes:
       - ${JWKS_FILE_DIR:-../mcp/fixtures}:/data:ro
     expose:
@@ -77,6 +120,8 @@ services:
   agentgateway:
     image: cr.agentgateway.dev/agentgateway:v1.6.0
     depends_on:
+      jwks-fixture:
+        condition: service_healthy
       agent-a:
         condition: service_healthy
       agent-b:

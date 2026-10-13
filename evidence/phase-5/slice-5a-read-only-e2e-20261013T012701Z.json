@@ -1,0 +1,80 @@
+{
+  "phase": "Phase 5",
+  "phase_status": "CURRENT",
+  "slice": "Slice 5A",
+  "slice_status": "COMPLETE",
+  "next_active_work_item": "Slice 5B",
+  "captured_at_utc": "2026-10-13T01:27:01Z",
+  "test_command": "uv run pytest tests/integration/test_solo_agentgateway_unified.py::test_unified_slice_5a_read_only_end_to_end -q -s",
+  "gate_policy": {
+    "required_consecutive_passes": 3,
+    "stop_on_first_failure": true,
+    "retry_failed_run": false,
+    "no_code_or_config_edits_during_gate": true,
+    "docker_image_prune_executed": false
+  },
+  "runs": [
+    {
+      "run": 1,
+      "result": "passed",
+      "runtime_seconds": 28.99,
+      "final_agent_a_response_text_sanitized": "The balance for account **[redacted]1001** is **12345.67**.",
+      "a2a_message_response_received": true,
+      "mcp_tool_call_start": true,
+      "mcp_tool_call_complete": true,
+      "mcp_failure": false,
+      "banking_mcp_counters": {
+        "tool_calls_total": 1,
+        "transfer_attempts_total": 0,
+        "transfer_count": 0,
+        "transfer_mutations_total": 0
+      }
+    },
+    {
+      "run": 2,
+      "result": "passed",
+      "runtime_seconds": 31.37,
+      "final_agent_a_response_text_sanitized": "The balance for account **[redacted]1001** is **12,345.67**. Let me know if you need further assistance!",
+      "a2a_message_response_received": true,
+      "mcp_tool_call_start": true,
+      "mcp_tool_call_complete": true,
+      "mcp_failure": false,
+      "banking_mcp_counters": {
+        "tool_calls_total": 1,
+        "transfer_attempts_total": 0,
+        "transfer_count": 0,
+        "transfer_mutations_total": 0
+      }
+    },
+    {
+      "run": 3,
+      "result": "passed",
+      "runtime_seconds": 27.00,
+      "final_agent_a_response_text_sanitized": "Account: [redacted]1001; Balance: 12345.67; Retrieved via approved read-only MCP gateway flow.",
+      "a2a_message_response_received": true,
+      "mcp_tool_call_start": true,
+      "mcp_tool_call_complete": true,
+      "mcp_failure": false,
+      "banking_mcp_counters": {
+        "tool_calls_total": 1,
+        "transfer_attempts_total": 0,
+        "transfer_count": 0,
+        "transfer_mutations_total": 0
+      }
+    }
+  ],
+  "no_edits_check": {
+    "pre_gate_git_status_sha256": "306aecf3ab6758961102047c69224d001f232e00ae146135b77a837cbc736725",
+    "post_gate_git_status_sha256": "306aecf3ab6758961102047c69224d001f232e00ae146135b77a837cbc736725",
+    "status_changed_during_gate": false
+  },
+  "cleanup": {
+    "leftover_slice_5a_containers": false,
+    "result": "No Slice 5A containers remain"
+  },
+  "sanitization": {
+    "raw_tokens_included": false,
+    "real_identity_claims_included": false,
+    "real_banking_data_included": false
+  }
+}

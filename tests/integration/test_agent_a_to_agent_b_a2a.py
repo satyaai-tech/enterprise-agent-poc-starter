@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from a2a.utils.constants import TransportProtocol
 
 from agents.agent_a.a2a_client import fetch_agent_b_agent_card, send_agent_b_message
 from agents.agent_a.a2a_smoke import _run_live_probe, main
@@ -27,7 +28,11 @@ def test_fetch_agent_b_agent_card_uses_resolver() -> None:
         __import__("agents.agent_a.a2a_client", fromlist=["A2ACardResolver"]).A2ACardResolver.get_agent_card = original
 
 
-def test_send_agent_b_message_extracts_a2a_text(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_agent_b_message_extracts_a2a_text(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    token_path = tmp_path / "token-b.txt"
+    token_path.write_text("token-b\n", encoding="utf-8")
+    monkeypatch.setenv("TOKEN_B_FILE", str(token_path))
+
     class DummyClient:
         async def send_message(self, request):
             yield SimpleNamespace(
@@ -40,6 +45,12 @@ def test_send_agent_b_message_extracts_a2a_text(monkeypatch: pytest.MonkeyPatch)
             return None
 
     async def fake_create_client(base_url, **kwargs):
+        client_config = kwargs.get("client_config")
+        assert client_config is not None
+        assert client_config.supported_protocol_bindings == [
+            TransportProtocol.JSONRPC,
+            TransportProtocol.HTTP_JSON,
+        ]
         return DummyClient()
 
     async def fake_fetch_agent_b_agent_card(base_url):

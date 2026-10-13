@@ -52,6 +52,11 @@ Current phase:
 
 - Phase 5: Jupyter end-to-end Solo demonstration
 
+Phase 5 slice status:
+
+- Slice 5A: COMPLETE (read-only end-to-end stability gate passed)
+- Slice 5B: next active work item
+
 Remaining:
 
 - No later phases are currently defined beyond Phase 5.

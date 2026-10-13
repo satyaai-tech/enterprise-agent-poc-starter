@@ -9,8 +9,10 @@ import httpx
 
 from a2a.client import A2ACardResolver, ClientConfig, create_client
 from a2a.types.a2a_pb2 import Message, Part, Role, SendMessageRequest
+from a2a.utils.constants import TransportProtocol
 
 from agents.flow_logging import get_flow_id, log_flow_event, set_flow_id
+from agents.token_provider import FileTokenProvider
 
 AGENT_B_A2A_URL = os.getenv("AGENT_B_A2A_URL", "http://127.0.0.1:8001")
 A2A_CLIENT_INVOCATION_COUNT = 0
@@ -32,6 +34,16 @@ def _ensure_flow_id() -> str:
     flow_id = uuid.uuid4().hex[:12]
     set_flow_id(flow_id)
     return flow_id
+
+
+def _public_a2a_headers() -> dict[str, str]:
+    return {"X-Flow-ID": _ensure_flow_id()}
+
+
+def _protected_a2a_headers() -> dict[str, str]:
+    headers = _public_a2a_headers()
+    headers["Authorization"] = f"Bearer {FileTokenProvider.from_env('TOKEN_B_FILE').token}"
+    return headers
 
 
 def _is_adk_thought(value: Any) -> bool:
@@ -140,7 +152,8 @@ def _extract_first_text(value: Any) -> str:
 async def fetch_agent_b_agent_card(base_url: str = AGENT_B_A2A_URL) -> Any:
     flow_id = _ensure_flow_id()
     started_at = time.perf_counter()
-    async with httpx.AsyncClient(timeout=30.0, headers={"X-Flow-ID": flow_id}) as http_client:
+    headers = _public_a2a_headers()
+    async with httpx.AsyncClient(timeout=30.0, headers=headers) as http_client:
         resolver = A2ACardResolver(http_client, base_url)
         card = await resolver.get_agent_card()
     log_flow_event(
@@ -173,8 +186,15 @@ async def send_agent_b_message(message_text: str, base_url: str = AGENT_B_A2A_UR
         success=True,
     )
     A2A_CLIENT_INVOCATION_COUNT += 1
-    http_client = httpx.AsyncClient(timeout=180.0, headers={"X-Flow-ID": flow_id})
-    client_config = ClientConfig(streaming=False, httpx_client=http_client)
+    http_client = httpx.AsyncClient(timeout=180.0, headers=_protected_a2a_headers())
+    client_config = ClientConfig(
+        streaming=False,
+        httpx_client=http_client,
+        supported_protocol_bindings=[
+            TransportProtocol.JSONRPC,
+            TransportProtocol.HTTP_JSON,
+        ],
+    )
     client = await create_client(base_url, client_config=client_config)
     try:
         request = SendMessageRequest(

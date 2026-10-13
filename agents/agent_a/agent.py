@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
@@ -64,6 +65,33 @@ async def delegate_to_agent_b(message: str) -> str:
     return result
 
 
+def _tool_response_has_error(result: object) -> bool:
+    if not isinstance(result, dict):
+        return False
+    if result.get("error") is not None:
+        return True
+    if result.get("errors"):
+        return True
+    if str(result.get("status") or "").lower() == "error":
+        return True
+    return False
+
+
+async def delegate_to_agent_b_after_tool_callback(
+    *,
+    tool: Any,
+    args: dict[str, Any],
+    tool_context: Any,
+    tool_response: object,
+) -> dict[str, Any] | None:
+    if getattr(tool, "name", None) != "delegate_to_agent_b":
+        return None
+    if _tool_response_has_error(tool_response):
+        return None
+    tool_context.actions.skip_summarization = True
+    return None
+
+
 def build_agent_a(config: LocalOllamaConfig | None = None) -> LlmAgent:
     resolved = config or LocalOllamaConfig.from_env(context="Agent A")
     model = LiteLlm(model=resolved.model_name, api_base=resolved.ollama_api_base)
@@ -73,6 +101,7 @@ def build_agent_a(config: LocalOllamaConfig | None = None) -> LlmAgent:
         model=model,
         instruction=AGENT_A_INSTRUCTION,
         tools=[delegate_to_agent_b],
+        after_tool_callback=delegate_to_agent_b_after_tool_callback,
     )
 
 

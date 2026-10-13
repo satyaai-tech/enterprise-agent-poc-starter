@@ -192,6 +192,11 @@ This Phase 4 local-agent slice is complete with sanitized evidence showing the S
 
 ### Solo Phase 5 — End-to-end Solo validation (CURRENT)
 
+Phase 5 slice status:
+
+- Slice 5A: COMPLETE
+- Slice 5B: next active work item
+
 Run the complete Solo flow end-to-end:
 
 1. Jupyter Notebook

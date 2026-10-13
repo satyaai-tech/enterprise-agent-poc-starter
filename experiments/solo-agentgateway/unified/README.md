@@ -15,10 +15,10 @@ MCP stay private on the Compose network. Agent A calls Agent B at
 
 ## Current boundary
 
-This first unified slice proves process consolidation and routing. It does not
-replace the authenticated isolated evidence. Entra JWT/OBO and the proven MCP
-authorization rules must be layered into this profile in a subsequent focused
-change before it is treated as the secured end-to-end runtime.
+This unified slice is the Slice 5A happy path. It keeps the synthetic JWT trust
+chain private and local: a private JWKS fixture supplies the public keys, Agent A
+attaches Token B for the protected A2A route, and Agent B uses Token C for the
+read-only MCP balance lookup. The private key never enters the app containers.
 
 ## Run
 
