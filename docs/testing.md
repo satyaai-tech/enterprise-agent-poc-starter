@@ -44,9 +44,11 @@ Tests must prove denial behavior as well as the happy path. Record component ver
 | Replay/retry of same write | No duplicate effect |
 | Tool description/result contains hostile instructions | Treated as data; policy remains enforced |
 
-## Planned Phase 5 Slice 5C matrix
+## Phase 5 Slice 5C matrix
 
-Slice 5C is not started and is not a claim that write capability exists yet. The planned gates below document the minimum required evidence before Phase 5 can be marked complete.
+Slice 5C is COMPLETE. The matrix below was satisfied by the guarded live run recorded at `evidence/phase-5/slice-5c-two-user-authorization-20261015T015546Z.json`. Reader Token C requires `Banking.Read` (not `Banking.Write`); Writer Token C requires `Banking.Read` and `Banking.Write`; roles decide per-user write authority.
+
+Recorded results: 92 focused synthetic tests and 23 unified regression tests passed, and the live runner passed once with one authorized mutation and zero mutations from denied requests. Logs and evidence must never contain tokens, secrets, authorization headers, full JWT payloads or raw identifiers.
 
 ### Reader-user gates
 
@@ -137,4 +139,3 @@ The final report must separate:
 - Unknown or deferred.
 
 Macaw must remain listed as deferred, not accidentally described as evaluated.
-

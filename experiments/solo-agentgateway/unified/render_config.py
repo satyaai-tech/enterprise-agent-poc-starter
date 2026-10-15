@@ -38,6 +38,7 @@ def render() -> str:
         "((jwt.ver == '2.0' && jwt.azp == '{authorized_client}') || "
         "(jwt.ver == '1.0' && jwt.appid == '{authorized_client}')) && "
         "jwt.scp.split(' ').exists(scope, scope == 'Banking.Read') && "
+        "jwt.roles.exists(role, role == 'Banking.Reader' || role == 'Banking.Writer') && "
         "mcp.tool.name == 'get_account_summary'"
     ).format(tenant_id=tenant_id, authorized_client=mcp_client)
 
@@ -46,6 +47,7 @@ def render() -> str:
         "((jwt.ver == '2.0' && jwt.azp == '{authorized_client}') || "
         "(jwt.ver == '1.0' && jwt.appid == '{authorized_client}')) && "
         "jwt.scp.split(' ').exists(scope, scope == 'Banking.Write') && "
+        "jwt.roles.exists(role, role == 'Banking.Writer') && "
         "mcp.tool.name == 'create_transfer'"
     ).format(tenant_id=tenant_id, authorized_client=mcp_client)
 

@@ -190,15 +190,16 @@ Document Docker Desktop networking and when `host.docker.internal` is required t
 
 This Phase 4 local-agent slice is complete with sanitized evidence showing the Solo A2A gateway route, private Agent B runtime, and verified delegated PASS result through the local Ollama-backed ADK flow.
 
-### Solo Phase 5 — End-to-end Solo validation (CURRENT, IN PROGRESS)
+### Solo Phase 5 — End-to-end Solo validation (COMPLETE)
 
 Phase 5 slice status:
 
 - Slice 5A: COMPLETE — validated read-only evidence remains valid for the read-only architecture
-- Slice 5B: PLANNED / guarded live validation required before completion can be claimed
-- Slice 5C: PLANNED / NOT STARTED — Per-User Read/Write Authorization
+- Slice 5B: COMPLETE — guarded live read-only validation and notebook path are proven
+- Slice 5C: COMPLETE — Per-User Read/Write Authorization (`evidence/phase-5/slice-5c-two-user-authorization-20261015T015546Z.json`)
+- Slice 5D: NEXT / PLANNED — OpenTelemetry and Arize Phoenix telemetry; not implemented or verified
 
-Phase 5 remains IN PROGRESS until the required write-capable Slice 5C gates and evidence are complete. The existing read-only evidence must not be treated as end-to-end write-capable evidence.
+Phase 5 is COMPLETE. Phase 6 remains PLANNED. The read-only Slice 5A/5B evidence is not write-capable evidence; the write-capable evidence is the Slice 5C record.
 
 Run the complete Solo flow end-to-end:
 
@@ -229,13 +230,13 @@ This is validation of the complete Solo flow, not a Kong-versus-Solo comparison.
 
 ### Solo Phase 6 — FastMCP and MACAW trust mesh (PLANNED)
 
-Phase 6 remains a planned future work stream and does not include the Phase 5 Slice 5C implementation. It introduces FastMCP compatibility and MACAW policy enforcement without changing the completed read-only Phase 5 baseline. Phase 5 must not be marked complete until the required Slice 5C gates and evidence are recorded.
+Phase 6 remains a planned future work stream and does not include the Phase 5 Slice 5C implementation. It introduces FastMCP compatibility and MACAW policy enforcement without changing the completed read-only Phase 5 baseline. Phase 5 closed after the Slice 5C gates and evidence were recorded.
 
-#### Slice 5C — Per-User Read/Write Authorization (PLANNED / NOT STARTED)
+#### Slice 5C — Per-User Read/Write Authorization (COMPLETE)
 
 Purpose:
 
-Extend the proven Phase 5 read-only flow with deterministic, per-user authorization and controlled banking transfers. This slice is intentionally planned as a separate Phase 5 extension and is not a claim that controlled transfer support currently exists end to end.
+Extend the proven Phase 5 read-only flow with deterministic, per-user authorization and controlled banking transfers. The code, synthetic gates and the guarded two-user live validation have passed, so controlled transfers are proven live end to end for the Reader and Writer test identities.
 
 The model may interpret the user request and choose an appropriate tool, but it must never grant authorization. Authorization decisions must come from validated Microsoft Entra claims and deterministic gateway and Banking MCP policy enforcement.
 
@@ -244,7 +245,8 @@ Two-user POC model:
 - `poc-banking-reader` is assigned `Banking.Reader` only and is not assigned `Banking.Writer`.
 - `poc-banking-writer` is assigned both `Banking.Reader` and `Banking.Writer`.
 - Both users authenticate independently with distinct `oid` values under the configured POC tenant `tid`.
-- Token C must contain the delegated scope and the user’s assigned Banking MCP app roles.
+- Token C must contain the delegated scope(s) required for that identity and the user’s assigned Banking MCP app roles. The OBO exchange requests the single Banking `/.default` scope.
+- Reader requires `Banking.Read`; Writer requires `Banking.Read` and `Banking.Write`. The Reader may also carry `Banking.Write` under tenant-wide consent, so the `Banking.Writer` app role is the per-user write boundary.
 
 Authorization matrix:
 
@@ -286,7 +288,7 @@ User/Gradio → Token A → Agent A → OBO Token B → Agent B → OBO Token C 
 
 This flow must preserve the same delegated user across Token A, Token B, and Token C, while the gateway and Banking MCP enforce the same identity and authorization boundary before any write executes.
 
-No implementation or evidence is created as part of this documentation-only task. The slice remains planned until its synthetic and guarded live gates pass and are recorded under `evidence/phase-5/`.
+The implementation includes scope-and-role policy, ownership enforcement, controlled transfer handling, a Slice 5C Gradio notebook, and a safe-by-default two-user live runner. The guarded live gates passed once and the sanitized evidence is recorded at `evidence/phase-5/slice-5c-two-user-authorization-20261015T015546Z.json`: one authorized transfer mutation, zero mutations from denied requests, and sanitized logging. Slice 5D telemetry (OpenTelemetry and Arize Phoenix) is the next planned work and is not implemented.
 
 The migration and security integration must be implemented as separate validation gates so failures can be attributed either to the MCP framework migration or to MACAW policy enforcement.
 

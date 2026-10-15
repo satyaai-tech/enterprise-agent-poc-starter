@@ -1,0 +1,75 @@
+{
+  "slice": "5C",
+  "title": "Per-User Read/Write Authorization",
+  "status": "PASS",
+  "recorded_utc": "2026-10-15T01:55:46Z",
+  "branch": "phase-5-e2e-solo",
+  "live_runner": {
+    "command": "PYTHONUNBUFFERED=1 PYTHONPATH=\"$PWD\" uv run python experiments/solo-agentgateway/unified/live_slice5c_two_user.py --live",
+    "exit_code": 0,
+    "status_line": "PHASE_5_SLICE_5C_LIVE_STATUS: PASS",
+    "runs": 1
+  },
+  "identities": {
+    "reader_ref": "a516b9a272124ff8",
+    "writer_ref": "86b01408ac69ec97",
+    "same_tenant": true,
+    "distinct_users": true,
+    "identity_chain": "Token A -> Token B -> Token C preserved the same tenant and user for each identity"
+  },
+  "token_c_exchange": {
+    "obo_request_scope_shape": "<banking-app-id-uri>/.default (single scope)",
+    "validated_per_scope": "audience, issuer, tenant, lifetime, signature and authorized client (Agent B)"
+  },
+  "reader": {
+    "required_scopes_verified": ["Banking.Read"],
+    "write_scope_requirement": "none; per-user write authority is the Banking.Writer role plus Banking MCP policy",
+    "required_roles_verified": ["Banking.Reader"],
+    "forbidden_roles_verified_absent": ["Banking.Writer"],
+    "tool_discovery": ["get_account_summary"],
+    "owned_account_read": "allowed",
+    "cross_user_read": "denied",
+    "transfer_attempt": "denied"
+  },
+  "writer": {
+    "required_scopes_verified": ["Banking.Read", "Banking.Write"],
+    "required_roles_verified": ["Banking.Reader", "Banking.Writer"],
+    "tool_discovery": ["get_account_summary", "create_transfer"],
+    "owned_account_read": "allowed",
+    "confirmed_owned_transfer": "succeeded once",
+    "identical_idempotent_replay": "no additional mutation",
+    "conflicting_idempotency_replay": "denied",
+    "missing_confirmation": "denied",
+    "missing_idempotency_key": "denied",
+    "non_positive_amount": "denied",
+    "cross_user_transfer": "denied",
+    "cross_user_read": "denied"
+  },
+  "counters": {
+    "transfer_mutations_total": 1,
+    "transfer_count": 1,
+    "idempotent_retries_total": 1,
+    "transfer_attempts_total": "not printed by the runner; the runner asserts exactly one mutation and one stored transfer",
+    "denied_request_mutations": 0
+  },
+  "cleanup": {
+    "compose_projects_after_run": 0,
+    "solo_unified_containers_after_run": 0
+  },
+  "tests": [
+    {
+      "command": "uv run pytest tests/contracts/test_phase5_slice5c_gradio_notebook_safety.py tests/integration/test_solo_agentgateway_slice5c_live_runner.py tests/integration/test_agent_b_token_c_obo.py tests/integration/test_agent_b_mcp_client.py tests/integration/test_solo_agentgateway_mcp.py -q",
+      "result": "92 passed in 25.29s"
+    },
+    {
+      "command": "uv run pytest tests/integration/test_solo_agentgateway_unified.py tests/integration/test_agent_a_to_agent_b_a2a.py tests/integration/test_solo_agentgateway_token_boundary.py -q",
+      "result": "23 passed in 70.95s"
+    }
+  ],
+  "sanitization": "No tokens, secrets, authorization headers, JWT payloads, raw object IDs, usernames, tenant IDs or device-login codes are recorded.",
+  "notes": [
+    "Granted scope lists are not echoed by the runner; the runner verifies the required scopes per identity and fails closed otherwise.",
+    "Reader Token C may carry the Banking.Write delegated scope under tenant-wide consent; app roles are the per-user write boundary.",
+    "MACAW, FastMCP and telemetry are not part of this slice."
+  ]
+}

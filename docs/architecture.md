@@ -86,9 +86,9 @@ Use deny-by-default policy at every boundary:
 - Solo MCP boundary: explicit read/write tool allowlists, user and caller context, schema limits, and confirmation/idempotency for writes.
 - Banking mock: server-side authorization check even if the gateway already checked.
 
-### Planned Phase 5 Slice 5C model
+### Phase 5 Slice 5C model
 
-Slice 5C extends the proven read-only flow with deterministic per-user authorization and controlled banking transfers. This is a planned design, not a claim that write support exists end to end.
+Slice 5C extends the proven read-only flow with deterministic per-user authorization and controlled banking transfers. The local implementation, synthetic gates and guarded two-user live validation have passed (`evidence/phase-5/slice-5c-two-user-authorization-20261015T015546Z.json`). Authorization uses delegated scopes plus app roles: the Reader holds `Banking.Reader` and needs `Banking.Read`; the Writer holds `Banking.Reader` and `Banking.Writer` and needs `Banking.Read` and `Banking.Write`. App roles are the per-user write boundary, ownership is checked on validated `tid` and `oid`, tool discovery is role-filtered, and writes require explicit confirmation and an idempotency key. Telemetry (Slice 5D) and Phase 6 are not part of this slice.
 
 The active request flow remains:
 

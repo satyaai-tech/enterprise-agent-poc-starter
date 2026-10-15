@@ -110,7 +110,16 @@ def _build_token_a(private_key, issuer: str) -> str:
     return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "synthetic-kid"})
 
 
-def _build_token_for_scope(private_key, issuer: str, *, audience: str, scope: str, authorized_client: str, client_claim: str = "azp") -> str:
+def _build_token_for_scope(
+    private_key,
+    issuer: str,
+    *,
+    audience: str,
+    scope: str,
+    authorized_client: str,
+    client_claim: str = "azp",
+    roles: list[str] | None = None,
+) -> str:
     now = int(datetime.now(timezone.utc).timestamp())
     payload = {
         "iss": issuer,
@@ -125,6 +134,10 @@ def _build_token_for_scope(private_key, issuer: str, *, audience: str, scope: st
         "ver": "2.0",
         client_claim: authorized_client,
     }
+    if roles is not None:
+        payload["roles"] = list(roles)
+    elif audience == "api://banking-mock":
+        payload["roles"] = ["Banking.Reader"]
     return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "synthetic-kid"})
 
 
@@ -240,7 +253,7 @@ def test_live_unified_compose_config_renders_without_token_files_or_fixture(tmp_
             "MCP_AUDIENCE": "api://banking-mock",
             "API_SCOPE": "AgentA.Access",
             "A2A_SCOPE": "AgentB.Access",
-            "BANKING_SCOPE": "Banking.Read",
+            "BANKING_SCOPE": "Banking.Read Banking.Write",
             "API_AUTHORIZED_CLIENT": "synthetic-agent-a",
             "A2A_AUTHORIZED_CLIENT": "synthetic-agent-a",
             "MCP_AUTHORIZED_CLIENT": "synthetic-agent-b",
@@ -250,7 +263,9 @@ def test_live_unified_compose_config_renders_without_token_files_or_fixture(tmp_
             "ENTRA_AGENT_B_SCOPE": "api://agent-b/AgentB.Access",
             "ENTRA_AGENT_B_CLIENT_ID": "agent-b-client-id",
             "ENTRA_AGENT_B_CLIENT_SECRET_FILE": str(agent_b_secret),
-            "ENTRA_BANKING_SCOPE": "Banking.Read",
+            "ENTRA_BANKING_SCOPE": "api://banking/Banking.Read",
+            "ENTRA_BANKING_SCOPES": "api://banking/Banking.Read api://banking/Banking.Write",
+            "BANKING_ACCOUNT_OWNERS_JSON": '{"acct-9000":"reader-oid","acct-1001":"writer-oid"}',
             "POC_LOG_RAW_USER_ID": "false",
             "AG_CONFIG_PATH": str(tmp_path / "agentgateway-config"),
             "API_HOST_PORT": "18080",
@@ -271,6 +286,7 @@ def test_live_unified_compose_config_renders_without_token_files_or_fixture(tmp_
 
     agent_a_env = rendered["services"]["agent-a"]["environment"]
     agent_b_env = rendered["services"]["agent-b"]["environment"]
+    banking_env = rendered["services"]["banking-mcp"]["environment"]
     agent_a_volumes = rendered["services"]["agent-a"]["volumes"]
     agent_b_volumes = rendered["services"]["agent-b"]["volumes"]
     gateway_ports = rendered["services"]["agentgateway"]["ports"]
@@ -279,6 +295,9 @@ def test_live_unified_compose_config_renders_without_token_files_or_fixture(tmp_
     assert "TOKEN_C_FILE" not in agent_b_env
     assert "jwks-fixture" not in rendered["services"]
     assert agent_b_env["AGENT_B_TOKEN_C_MODE"] == "obo"
+    assert agent_b_env["ENTRA_BANKING_SCOPES"] == "api://banking/Banking.Read api://banking/Banking.Write"
+    assert banking_env["EXPECTED_SCOPE"] == "Banking.Read Banking.Write"
+    assert banking_env["BANKING_ACCOUNT_OWNERS_JSON"] == '{"acct-9000":"reader-oid","acct-1001":"writer-oid"}'
     assert agent_a_env["AGENT_A_TOKEN_B_MODE"] == "obo"
     assert any(
         volume.get("target") == "/run/secrets/agent-a-client-secret" and volume.get("read_only") is True
@@ -310,9 +329,10 @@ def test_live_runtime_env_uses_validated_real_entra_mapping() -> None:
         "ENTRA_AGENT_B_SCOPE": "api://agent-b/AgentB.Access",
         "ENTRA_AGENT_B_EXPECTED_AUDIENCE": "api://agent-b-live",
         "ENTRA_AGENT_B_CLIENT_SECRET_FILE": "/tmp/live-agent-b-secret",
-        "ENTRA_BANKING_SCOPE": "api://banking/Banking.Read",
+        "ENTRA_BANKING_SCOPES": "api://banking/Banking.Read api://banking/Banking.Write",
         "ENTRA_BANKING_EXPECTED_AUDIENCE": "api://banking-live",
         "BANKING_TEST_USER_OID": "user-12345",
+        "BANKING_ACCOUNT_OWNERS_JSON": '{"acct-1001":"reader-oid","acct-2002":"writer-oid"}',
     }
 
     env = live_unified_obo._compose_live_runtime_env(real_config)
@@ -322,7 +342,7 @@ def test_live_runtime_env_uses_validated_real_entra_mapping() -> None:
     assert env["MCP_AUDIENCE"] == "api://banking-live"
     assert env["API_SCOPE"] == "AgentA.Access"
     assert env["A2A_SCOPE"] == "AgentB.Access"
-    assert env["BANKING_SCOPE"] == "Banking.Read"
+    assert env["BANKING_SCOPE"] == "Banking.Read Banking.Write"
     assert env["API_AUTHORIZED_CLIENT"] == "notebook-client-live"
     assert env["A2A_AUTHORIZED_CLIENT"] == "agent-a-client-live"
     assert env["MCP_AUTHORIZED_CLIENT"] == "agent-b-client-live"
@@ -332,6 +352,8 @@ def test_live_runtime_env_uses_validated_real_entra_mapping() -> None:
     assert env["AGENT_A_TOKEN_B_MODE"] == "obo"
     assert env["ENTRA_AGENT_B_CLIENT_ID"] == "agent-b-client-live"
     assert env["ENTRA_BANKING_SCOPE"] == "api://banking/Banking.Read"
+    assert env["ENTRA_BANKING_SCOPES"] == "api://banking/Banking.Read api://banking/Banking.Write"
+    assert env["BANKING_ACCOUNT_OWNERS_JSON"] == '{"acct-1001":"reader-oid","acct-2002":"writer-oid"}'
     assert env["ENTRA_AGENT_B_CLIENT_SECRET_FILE"] == "/tmp/live-agent-b-secret"
     assert env["AGENT_B_TOKEN_C_MODE"] == "obo"
     assert env["API_AUDIENCE"] != "api://agent-a-example"
@@ -353,11 +375,51 @@ def test_live_runtime_env_fails_closed_when_real_mapping_is_missing() -> None:
         "ENTRA_AGENT_B_SCOPE": "api://agent-b/AgentB.Access",
         "ENTRA_AGENT_B_EXPECTED_AUDIENCE": "api://agent-b-live",
         "ENTRA_AGENT_B_CLIENT_SECRET_FILE": "/tmp/live-agent-b-secret",
-        "ENTRA_BANKING_SCOPE": "api://banking/Banking.Read",
+        "ENTRA_BANKING_SCOPES": "api://banking/Banking.Read api://banking/Banking.Write",
     }
 
     with pytest.raises(RuntimeError, match="Missing validated live Entra mapping"):
         live_unified_obo._compose_live_runtime_env(incomplete)
+
+
+def test_live_token_role_validation_requires_reader_and_can_forbid_writer() -> None:
+    token = jwt.encode(
+        {"roles": ["Banking.Reader"]},
+        "not-a-live-secret-but-long-enough-for-test-only",
+        algorithm="HS256",
+    )
+
+    live_unified_obo._require_token_roles(
+        token,
+        required={"Banking.Reader"},
+        forbidden={"Banking.Writer"},
+    )
+
+    with pytest.raises(RuntimeError, match="missing required app role"):
+        live_unified_obo._require_token_roles(token, required={"Banking.Writer"})
+
+
+def test_live_runtime_env_preserves_slice5c_account_owner_map() -> None:
+    real_config = {
+        "ENTRA_TENANT_ID": "tenant-live-123",
+        "ENTRA_NOTEBOOK_CLIENT_ID": "notebook-client-live",
+        "ENTRA_AGENT_A_CLIENT_ID": "agent-a-client-live",
+        "ENTRA_AGENT_A_CLIENT_SECRET_FILE": "/tmp/live-agent-a-secret",
+        "ENTRA_AGENT_A_SCOPE": "api://agent-a/AgentA.Access",
+        "ENTRA_AGENT_A_EXPECTED_AUDIENCE": "api://agent-a-live",
+        "ENTRA_AGENT_B_CLIENT_ID": "agent-b-client-live",
+        "ENTRA_AGENT_B_SCOPE": "api://agent-b/AgentB.Access",
+        "ENTRA_AGENT_B_EXPECTED_AUDIENCE": "api://agent-b-live",
+        "ENTRA_AGENT_B_CLIENT_SECRET_FILE": "/tmp/live-agent-b-secret",
+        "ENTRA_BANKING_SCOPES": "api://banking/Banking.Read api://banking/Banking.Write",
+        "ENTRA_BANKING_EXPECTED_AUDIENCE": "api://banking-live",
+        "BANKING_ACCOUNT_OWNERS_JSON": '{"acct-9000":"reader-oid","acct-1001":"writer-oid"}',
+    }
+
+    env = live_unified_obo._compose_live_runtime_env(real_config)
+
+    assert env["BANKING_ACCOUNT_OWNERS_JSON"] == '{"acct-9000":"reader-oid","acct-1001":"writer-oid"}'
+    assert env["BANKING_SCOPE"] == "Banking.Read Banking.Write"
 
 
 def test_unified_slice_5a_read_only_end_to_end(tmp_path, monkeypatch):
@@ -691,7 +753,7 @@ def test_unified_config_has_three_listeners_and_private_backends(tmp_path, monke
         "ENTRA_AGENT_B_SCOPE": "api://agent-b/AgentB.Access",
         "ENTRA_AGENT_B_EXPECTED_AUDIENCE": "api://agent-b-live",
         "ENTRA_AGENT_B_CLIENT_SECRET_FILE": "/tmp/live-agent-b-secret",
-        "ENTRA_BANKING_SCOPE": "api://banking/Banking.Read",
+        "ENTRA_BANKING_SCOPES": "api://banking/Banking.Read api://banking/Banking.Write",
         "ENTRA_BANKING_EXPECTED_AUDIENCE": "api://banking-live",
     }
     runtime_env = live_unified_obo._compose_live_runtime_env(real_config)

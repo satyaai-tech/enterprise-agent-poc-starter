@@ -17,10 +17,11 @@ _ACCOUNT_OWNERS = {
     "acct-2002": "user-12345",
     "acct-3003": "user-12345",
     "acct-9000": "user-67890",
+    "acct-9001": "user-67890",
 }
 _IDEMPOTENCY_KEYS: dict[str, dict[str, Any]] = {}
 STATE: dict[str, Any] = {
-    "accounts": {"acct-1001": 12345.67, "acct-2002": 250.0},
+    "accounts": {"acct-1001": 12345.67, "acct-2002": 250.0, "acct-9000": 900.0, "acct-9001": 100.0},
     "transfers": [],
     "debug": {
         "requests_total": 0,
@@ -116,6 +117,12 @@ def validate_token(token: str) -> dict[str, Any] | None:
     expected_tenant = claims["tenant_id"]
     expected_client = claims["authorized_client"]
     token_scopes = set(str(principal.get("scp") or "").split())
+    raw_roles = principal.get("roles")
+    token_roles = (
+        set(raw_roles)
+        if isinstance(raw_roles, list) and all(isinstance(role, str) for role in raw_roles)
+        else set()
+    )
 
     if principal.get("tid") != expected_tenant:
         return None
@@ -135,6 +142,7 @@ def validate_token(token: str) -> dict[str, Any] | None:
         "issuer_ok": True,
         "client_ok": True,
         "scopes": token_scopes,
+        "roles": token_roles,
         "sub": str(principal.get("sub") or principal.get("oid") or ""),
         "oid": str(principal.get("oid") or principal.get("sub") or ""),
     }
@@ -144,7 +152,7 @@ def validate_token(token: str) -> dict[str, Any] | None:
 def reset_backend_state() -> None:
     global STATE, _IDEMPOTENCY_KEYS
     STATE = {
-        "accounts": {"acct-1001": 12345.67, "acct-2002": 250.0},
+        "accounts": {"acct-1001": 12345.67, "acct-2002": 250.0, "acct-9000": 900.0, "acct-9001": 100.0},
         "transfers": [],
         "debug": {
             "requests_total": 0,
@@ -171,6 +179,18 @@ def _debug_snapshot() -> dict[str, Any]:
 
 
 def _effective_account_owner(account_id: str) -> str:
+    configured_owners = (os.environ.get("BANKING_ACCOUNT_OWNERS_JSON") or "").strip()
+    if configured_owners:
+        try:
+            owner_map = json.loads(configured_owners)
+        except json.JSONDecodeError:
+            return ""
+        if not isinstance(owner_map, dict):
+            return ""
+        owner = owner_map.get(account_id)
+        if isinstance(owner, str) and owner.strip():
+            return owner.strip()
+        return ""
     configured_owner = (os.environ.get("BANKING_TEST_USER_OID") or "").strip()
     if configured_owner:
         return configured_owner
@@ -263,13 +283,14 @@ class Handler(BaseHTTPRequestHandler):
         if method == "tools/list":
             allowed_tools: list[dict[str, Any]] = []
             token_scopes = principal["scopes"]
-            if "Banking.Read" in token_scopes:
+            token_roles = principal["roles"]
+            if "Banking.Read" in token_scopes and token_roles.intersection({"Banking.Reader", "Banking.Writer"}):
                 allowed_tools.append({
                     "name": "get_account_summary",
                     "description": "Read account summary",
                     "inputSchema": {"type": "object", "properties": {"account_id": {"type": "string"}}, "required": ["account_id"]},
                 })
-            if "Banking.Write" in token_scopes:
+            if "Banking.Write" in token_scopes and "Banking.Writer" in token_roles:
                 allowed_tools.append({
                     "name": "create_transfer",
                     "description": "Create outbound transfer",
@@ -290,13 +311,22 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             token_scopes = principal["scopes"]
+            token_roles = principal["roles"]
             if tool_name in _READ_TOOLS and "Banking.Read" not in token_scopes:
                 STATE["debug"]["rejected_total"] += 1
                 self._respond_json(403, jsonrpc_error(-32004, "Missing Banking.Read scope", request_id=request_id))
                 return
+            if tool_name in _READ_TOOLS and not token_roles.intersection({"Banking.Reader", "Banking.Writer"}):
+                STATE["debug"]["rejected_total"] += 1
+                self._respond_json(403, jsonrpc_error(-32013, "Missing banking read role", request_id=request_id))
+                return
             if tool_name in _WRITE_TOOLS and "Banking.Write" not in token_scopes:
                 STATE["debug"]["rejected_total"] += 1
                 self._respond_json(403, jsonrpc_error(-32005, "Missing Banking.Write scope", request_id=request_id))
+                return
+            if tool_name in _WRITE_TOOLS and "Banking.Writer" not in token_roles:
+                STATE["debug"]["rejected_total"] += 1
+                self._respond_json(403, jsonrpc_error(-32014, "Missing Banking.Writer role", request_id=request_id))
                 return
 
             subject = str(principal.get("oid") or principal.get("sub") or "")

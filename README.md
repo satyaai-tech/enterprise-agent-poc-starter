@@ -50,13 +50,14 @@ Completed:
 
 Current phase:
 
-- Phase 5: Jupyter end-to-end Solo demonstration (IN PROGRESS)
+- Phase 5: Jupyter end-to-end Solo demonstration (COMPLETE)
 
 Phase 5 slice status:
 
 - Slice 5A: COMPLETE (read-only end-to-end stability gate passed; validated evidence remains read-only)
-- Slice 5B: PLANNED / guarded live validation in progress; do not claim completion until the live evidence exists
-- Slice 5C: PLANNED / NOT STARTED — Per-User Read/Write Authorization
+- Slice 5B: COMPLETE — guarded live read-only validation and local Gradio notebook are proven
+- Slice 5C: COMPLETE — Per-User Read/Write Authorization (live evidence: `evidence/phase-5/slice-5c-two-user-authorization-20261015T015546Z.json`)
+- Slice 5D: NEXT / PLANNED — OpenTelemetry and Arize Phoenix telemetry (not implemented or verified)
 
 Remaining:
 
@@ -66,7 +67,7 @@ The historical Kong work remains in the repository as reference material only an
 
 ## Phase 5 Slice 5C: Per-User Read/Write Authorization
 
-Slice 5C extends the proven read-only Phase 5 flow with deterministic, per-user authorization and controlled banking transfers. This documentation describes the planned design only; it is not a claim that transfers currently work end to end.
+Slice 5C extends the proven read-only Phase 5 flow with deterministic, per-user authorization and controlled banking transfers. The implementation, synthetic gates and the guarded two-user live gate have passed; the sanitized evidence is recorded under `evidence/phase-5/`.
 
 The active architecture remains:
 
@@ -91,9 +92,9 @@ The POC uses two independent Microsoft Entra test identities, documented only as
 - Token C must include the required delegated scope and the user’s Banking MCP app role(s).
 - The two users must have distinct `oid` values while sharing the configured POC tenant `tid`.
 
-### Planned Entra authorization model
+### Slice 5C Entra authorization model
 
-The Banking MCP API is planned to define the following app roles:
+The Banking MCP API defines the following app roles for this POC:
 
 - `Banking.Reader`
 - `Banking.Writer`
@@ -157,23 +158,30 @@ The planned write path includes the following controls:
 - raw identity logging may be enabled only when `POC_LOG_RAW_USER_ID=true`
 - committed live evidence should use sanitized or hashed identity references
 
-### Planned implementation boundaries
+### Implementation status
 
-Slice 5C is a planned document-only extension. It does not implement or claim any of the following items yet:
+Implemented locally:
 
-- Banking MCP Entra app roles and enterprise-application assignments
-- Agent B Token C OBO handling for read and write scopes
-- unified agentgateway read/write MCP policy enforcement
-- MCP tool discovery filtering by authorization
-- Agent B MCP client support for `create_transfer`
-- removal of Agent B’s unconditional write-tool rejection
-- Agent A and Agent B orchestration changes
-- structured transfer confirmation handling
-- idempotency-key generation and propagation
-- Banking MCP role, ownership, amount, confirmation, and idempotency enforcement
-- Gradio chat support for read and transfer requests
-- focused unit, contract, synthetic integration, and guarded live tests
-- Slice 5C evidence ledger
+- Token C OBO requests the single Banking `/.default` scope; the Reader must hold `Banking.Read`, the Writer `Banking.Read` and `Banking.Write`
+- unified agentgateway read/write scope-and-role policy
+- role-filtered MCP tool discovery and defense-in-depth direct-call checks
+- per-user account ownership, confirmation, positive-amount, and idempotency enforcement
+- Agent B `create_transfer` support and Agent A banking delegation
+- a separate Slice 5C Gradio chat notebook with user switching and staged `CONFIRM`/`CANCEL` transfer handling
+- focused contract and synthetic integration coverage
+- a safe-by-default two-user guarded live runner
+
+Live validation result (2026-10-15 UTC, branch `phase-5-e2e-solo`):
+
+- `live_slice5c_two_user.py --live` passed once with independent Reader and Writer sign-ins in the same tenant
+- authorization model: Entra scopes plus app roles; roles (`Banking.Reader`, `Banking.Writer`) are the per-user write boundary, and the Reader may carry the `Banking.Write` delegated scope under tenant-wide consent
+- Token A, Token B and Token C preserved the same delegated user and tenant for each identity
+- tool discovery is filtered: the Reader sees only `get_account_summary`, the Writer sees `get_account_summary` and `create_transfer`
+- account ownership, explicit confirmation, a caller-supplied idempotency key and a positive amount are enforced; identical replay added no mutation and a conflicting replay was denied
+- exactly one authorized transfer mutation; denied requests produced no mutation
+- evidence: `evidence/phase-5/slice-5c-two-user-authorization-20261015T015546Z.json`; tests: 92 focused and 23 unified regression tests passed
+- logs and evidence carry pseudonymous identity references only, never tokens, secrets, authorization headers or raw identifiers
+- not claimed: telemetry (Slice 5D), MACAW or FastMCP (Phase 6), production readiness
 
 The deliberate design remains to keep Phase 6 responsible for MACAW and FastMCP changes separately from Slice 5C.
 
@@ -248,9 +256,29 @@ The required live validation path is:
 16. Tear down all temporary Docker resources.
 17. Record evidence only after both user paths pass.
 
+Run the guarded two-user gate only when the local `.env`, external secret files, Entra assignments, Ollama, and Docker prerequisites are ready:
+
+```bash
+PYTHONPATH="$PWD" uv run python \
+  experiments/solo-agentgateway/unified/live_slice5c_two_user.py \
+  --live
+```
+
+The runner is safe by default without `--live`. It forces two independent device-code flows, derives the account-owner map from the validated users' `oid` claims, prints only pseudonymous identity references, and tears down its Docker project.
+
+For the manual Gradio demonstration, set `BANKING_ACCOUNT_OWNERS_JSON` in the local untracked `.env`, start the persistent live stack, then open `notebooks/phase-5-slice-5c-gradio-user-authorization.ipynb` and run both cells:
+
+```bash
+PYTHONPATH="$PWD" uv run python \
+  experiments/solo-agentgateway/unified/live_unified_obo.py \
+  --start-only
+```
+
+Stop it afterward with the same command using `--stop`. The historical Slice 5B notebook remains unchanged.
+
 ### Evidence requirements
 
-Future Slice 5C evidence under `evidence/phase-5/` must include:
+Slice 5C evidence under `evidence/phase-5/` includes:
 
 - timestamp
 - tested commit
@@ -269,7 +297,7 @@ Future Slice 5C evidence under `evidence/phase-5/` must include:
 - exact test commands
 - exact test outcomes
 
-The evidence will be created only after the validation gates pass; this documentation-only task does not create such evidence.
+The evidence will be created only after the guarded validation gates pass. Local implementation and synthetic test results are not substitutes for live evidence.
 
 The current read-only Phase 5 evidence remains valid and should not be reinterpreted as write-capable evidence.
 

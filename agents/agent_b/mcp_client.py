@@ -12,9 +12,45 @@ from agents.agent_b.token_c_provider import TokenCResolutionError, resolve_agent
 
 MCP_GATEWAY_URL = os.getenv("BANKING_MCP_URL", "http://agentgateway:8082/mcp")
 MCP_PROTOCOL_VERSION = "2025-03-26"
+ACCESS_DENIED_MARKER = "ACCESS_DENIED"
+
+_DENIAL_MESSAGES: dict[tuple[str, bool], tuple[str, str]] = {
+    ("create_transfer", False): (
+        "Your role is not allowed to make transfers. Only the Writer role can transfer funds.",
+        "create_transfer is not exposed to this identity by Banking MCP tools/list (Banking.Write scope or Banking.Writer role missing).",
+    ),
+    ("get_account_summary", False): (
+        "Your role is not allowed to read account data.",
+        "get_account_summary is not exposed to this identity by Banking MCP tools/list (Banking.Read scope or reader/writer role missing).",
+    ),
+    ("create_transfer", True): (
+        "The transfer was refused. Both accounts must be yours, and the amount and confirmation must be valid.",
+        "Banking MCP refused create_transfer with HTTP 403 (ownership, role, scope, confirmation, or idempotency policy).",
+    ),
+    ("get_account_summary", True): (
+        "You can only view accounts that you own.",
+        "Banking MCP refused get_account_summary with HTTP 403 (ownership, role, or scope policy).",
+    ),
+}
 
 
-def _mcp_headers(*, token: str, session_id: str | None = None, flow_id: str | None = None) -> dict[str, str]:
+def _denial_text(tool_name: str, *, tool_listed: bool) -> str:
+    """Format a fixed, secret-free denial: marker | category | user message | system message."""
+    user_message, system_message = _DENIAL_MESSAGES.get(
+        (tool_name, tool_listed),
+        ("You are not allowed to perform this action.", "Banking MCP denied the request."),
+    )
+    category = "policy" if tool_listed else "role"
+    return f"{ACCESS_DENIED_MARKER} | {category} | {user_message} | {system_message}"
+
+
+def _mcp_headers(
+    *,
+    token: str,
+    session_id: str | None = None,
+    flow_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, str]:
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -24,6 +60,8 @@ def _mcp_headers(*, token: str, session_id: str | None = None, flow_id: str | No
     }
     if session_id:
         headers["Mcp-Session-Id"] = session_id
+    if idempotency_key:
+        headers["X-Idempotency-Key"] = idempotency_key
     return headers
 
 
@@ -82,8 +120,12 @@ def _parse_mcp_payload(raw: str) -> dict[str, object]:
     return payload
 
 
-async def get_account_summary(account_id: str) -> str:
-    """Read an account balance via the local MCP gateway using Token C."""
+async def _call_mcp_tool(
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    idempotency_key: str | None = None,
+) -> str:
     flow_id = get_flow_id()
     try:
         token = await resolve_agent_b_token_c()
@@ -135,21 +177,32 @@ async def get_account_summary(account_id: str) -> str:
             if not isinstance(tools, list):
                 raise ValueError("MCP tools/list response is invalid")
             tool_names = [tool.get("name") for tool in tools if isinstance(tool, dict)]
-            if "get_account_summary" not in tool_names:
-                raise ValueError("MCP tools/list does not expose get_account_summary")
-            if "create_transfer" in tool_names:
-                raise ValueError("MCP tools/list exposes create_transfer")
+            if tool_name not in tool_names:
+                log_flow_event("mcp_access_denied", "agent-b.mcp_client", flow_id=flow_id, http_path="/mcp", success=False)
+                return _denial_text(tool_name, tool_listed=False)
 
             log_flow_event("mcp_tools_discovered", "agent-b.mcp_client", flow_id=flow_id, http_path="/mcp", success=True)
 
             call_payload = {
                 "jsonrpc": "2.0",
                 "method": "tools/call",
-                "params": {"name": "get_account_summary", "arguments": {"account_id": account_id}},
+                "params": {"name": tool_name, "arguments": arguments},
                 "id": f"call-{uuid.uuid4().hex[:12]}",
             }
             log_flow_event("mcp_tool_call_start", "agent-b.mcp_client", flow_id=flow_id, http_path="/mcp", success=True)
-            call_response = await client.post(MCP_GATEWAY_URL, json=call_payload, headers=_mcp_headers(token=token, session_id=session_id, flow_id=flow_id))
+            call_response = await client.post(
+                MCP_GATEWAY_URL,
+                json=call_payload,
+                headers=_mcp_headers(
+                    token=token,
+                    session_id=session_id,
+                    flow_id=flow_id,
+                    idempotency_key=idempotency_key,
+                ),
+            )
+            if call_response.status_code == 403:
+                log_flow_event("mcp_access_denied", "agent-b.mcp_client", flow_id=flow_id, http_path="/mcp", success=False)
+                return _denial_text(tool_name, tool_listed=True)
             call_response.raise_for_status()
             call_body = _parse_mcp_payload(call_response.text)
             if call_body.get("error") is not None:
@@ -174,4 +227,47 @@ async def get_account_summary(account_id: str) -> str:
         raise
 
 
-__all__ = ["get_account_summary", "MCP_GATEWAY_URL"]
+async def get_account_summary(account_id: str) -> str:
+    """Read an owned account balance through the protected MCP boundary."""
+    normalized_account_id = account_id.strip()
+    if not normalized_account_id:
+        raise ValueError("account_id is required")
+    return await _call_mcp_tool(
+        "get_account_summary",
+        {"account_id": normalized_account_id},
+    )
+
+
+async def create_transfer(
+    from_account: str,
+    to_account: str,
+    amount: float,
+    confirmation: str,
+    idempotency_key: str,
+) -> str:
+    """Create a confirmed transfer when Token C policy authorizes Banking.Writer."""
+    normalized_from = from_account.strip()
+    normalized_to = to_account.strip()
+    normalized_confirmation = confirmation.strip().lower()
+    normalized_idempotency_key = idempotency_key.strip()
+    if not normalized_from or not normalized_to:
+        raise ValueError("from_account and to_account are required")
+    if amount <= 0:
+        raise ValueError("transfer amount must be greater than zero")
+    if normalized_confirmation != "yes":
+        raise ValueError("transfer requires explicit confirmation")
+    if not normalized_idempotency_key:
+        raise ValueError("idempotency_key is required")
+    return await _call_mcp_tool(
+        "create_transfer",
+        {
+            "from_account": normalized_from,
+            "to_account": normalized_to,
+            "amount": float(amount),
+            "confirmation": normalized_confirmation,
+        },
+        idempotency_key=normalized_idempotency_key,
+    )
+
+
+__all__ = ["ACCESS_DENIED_MARKER", "create_transfer", "get_account_summary", "MCP_GATEWAY_URL"]

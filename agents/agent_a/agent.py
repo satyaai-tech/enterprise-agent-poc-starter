@@ -23,18 +23,17 @@ def get_delegation_tool_invocation_count() -> int:
 
 AGENT_A_NAME = "agent_a"
 AGENT_A_DESCRIPTION = (
-    "Local orchestration agent for the Solo Phase 5 read-only flow. It handles "
-    "general prompts locally and routes approved read-only banking requests to Agent B."
+    "Local orchestration agent for the Solo Phase 5 Slice 5C flow. It handles "
+    "general prompts locally and routes banking requests to Agent B without making authorization decisions."
 )
 AGENT_A_INSTRUCTION = (
-    "You are Agent A in the Solo Phase 5 local read-only environment. "
+    "You are Agent A in the Solo Phase 5 Slice 5C environment. "
     "Respond to general non-banking prompts locally in plain language. "
-    "For a read-only banking request, including an account balance or account summary, "
+    "For a banking request, including an account balance, account summary, or transfer, "
     "always use the local Agent B delegation tool and return Agent B's response. "
     "Do not require the user to mention Agent B, delegation, A2A, MCP, or tool names. "
     "Never answer banking-data questions from your own knowledge. "
-    "Do not delegate requests that create a transfer, move funds, mutate data, or perform "
-    "another write; state that this POC supports read-only banking requests only. "
+    "Do not claim a transfer succeeded unless Agent B returns a successful result. "
     "Do not make authorization or identity decisions; those are enforced outside the model. "
     "When the Agent B delegation tool returns exactly PASS, return "
     "exactly PASS and nothing else. Do not add a prefix, suffix, explanation, "
@@ -43,7 +42,7 @@ AGENT_A_INSTRUCTION = (
 
 
 async def delegate_to_agent_b(message: str) -> str:
-    """Automatically use this tool for approved read-only banking requests such as an account balance or account summary. Do not use it for transfers, mutations, or other writes. It sends the request to Agent B and returns Agent B's response."""
+    """Use for banking reads and controlled transfer requests; deterministic downstream policy authorizes or denies execution."""
     global DELEGATION_TOOL_CALL_COUNT
     DELEGATION_TOOL_CALL_COUNT += 1
     started_at = time.perf_counter()

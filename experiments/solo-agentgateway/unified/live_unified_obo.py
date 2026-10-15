@@ -55,7 +55,6 @@ REQUIRED_ENV_KEYS = [
     "ENTRA_AGENT_B_SCOPE",
     "ENTRA_AGENT_B_EXPECTED_AUDIENCE",
     "ENTRA_AGENT_B_CLIENT_SECRET_FILE",
-    "ENTRA_BANKING_SCOPE",
     "ENTRA_BANKING_EXPECTED_AUDIENCE",
 ]
 
@@ -98,6 +97,16 @@ def _require_config() -> dict[str, str]:
             missing.append(key)
         else:
             values[key] = value
+    banking_scopes = (
+        (os.getenv("ENTRA_BANKING_SCOPES") or "").strip()
+        or (os.getenv("ENTRA_BANKING_SCOPE") or "").strip()
+    )
+    if not banking_scopes:
+        missing.append("ENTRA_BANKING_SCOPES or ENTRA_BANKING_SCOPE")
+    else:
+        values["ENTRA_BANKING_SCOPES"] = banking_scopes
+        if (os.getenv("ENTRA_BANKING_SCOPE") or "").strip():
+            values["ENTRA_BANKING_SCOPE"] = (os.getenv("ENTRA_BANKING_SCOPE") or "").strip()
     if missing:
         raise RuntimeError(f"Missing required unified Entra configuration: {', '.join(missing)}")
 
@@ -184,13 +193,25 @@ def _fetch_device_token(tenant_id: str, client_id: str, scope: str) -> str:
     return token
 
 
-def _acquire_obo_token(tenant_id: str, client_id: str, client_secret: str, user_assertion: str, scope: str) -> str:
+def _acquire_obo_token(
+    tenant_id: str,
+    client_id: str,
+    client_secret: str,
+    user_assertion: str,
+    scopes: list[str],
+) -> str:
     authority = f"https://login.microsoftonline.com/{tenant_id}"
     app = msal.ConfidentialClientApplication(client_id=client_id, client_credential=client_secret, authority=authority)
-    result = app.acquire_token_on_behalf_of(user_assertion=user_assertion, scopes=[scope])
+    result = app.acquire_token_on_behalf_of(user_assertion=user_assertion, scopes=scopes)
     token = result.get("access_token") if isinstance(result, dict) else None
     if not isinstance(token, str) or not token.strip():
-        raise RuntimeError("OBO exchange did not return an access token.")
+        # Only the error code and first description line are surfaced; trace/correlation IDs follow it.
+        code = str(result.get("error", "unknown")) if isinstance(result, dict) else "unknown"
+        description = str(result.get("error_description", "")) if isinstance(result, dict) else ""
+        lines = description.splitlines()
+        first_line = lines[0].split("Trace ID")[0].strip()[:300] if lines else ""
+        detail = f"{code}, {first_line}" if first_line else code
+        raise RuntimeError(f"OBO exchange did not return an access token ({detail}).")
     return token
 
 
@@ -236,13 +257,35 @@ def _compose_live_runtime_env(config: dict[str, str] | None = None) -> dict[str,
     mcp_audience = _require("ENTRA_BANKING_EXPECTED_AUDIENCE")
     api_scope = extract_delegated_scope_name(_require("ENTRA_AGENT_A_SCOPE"))
     a2a_scope = extract_delegated_scope_name(_require("ENTRA_AGENT_B_SCOPE"))
-    banking_scope = extract_delegated_scope_name(_require("ENTRA_BANKING_SCOPE"))
+    raw_banking_scopes = str(
+        live.get("ENTRA_BANKING_SCOPES")
+        or live.get("ENTRA_BANKING_SCOPE")
+        or env.get("ENTRA_BANKING_SCOPES")
+        or env.get("ENTRA_BANKING_SCOPE")
+        or ""
+    ).strip()
+    banking_scope_values = tuple(
+        dict.fromkeys(
+            part
+            for chunk in raw_banking_scopes.split(",")
+            for part in chunk.split()
+            if part
+        )
+    )
+    if not banking_scope_values:
+        raise RuntimeError("Missing validated live Entra mapping: ENTRA_BANKING_SCOPES")
+    banking_scope_names = " ".join(extract_delegated_scope_name(scope) for scope in banking_scope_values)
     api_client = _require("ENTRA_NOTEBOOK_CLIENT_ID")
     a2a_client = _require("ENTRA_AGENT_A_CLIENT_ID")
     mcp_client = _require("ENTRA_AGENT_B_CLIENT_ID")
     agent_a_secret_file = _require("ENTRA_AGENT_A_CLIENT_SECRET_FILE")
     agent_b_secret_file = _require("ENTRA_AGENT_B_CLIENT_SECRET_FILE")
     banking_user_oid = (live.get("BANKING_TEST_USER_OID") or env.get("BANKING_TEST_USER_OID") or "user-12345").strip() or "user-12345"
+    banking_account_owners_json = (
+        live.get("BANKING_ACCOUNT_OWNERS_JSON")
+        or env.get("BANKING_ACCOUNT_OWNERS_JSON")
+        or ""
+    ).strip()
 
     env.update(
         {
@@ -254,11 +297,12 @@ def _compose_live_runtime_env(config: dict[str, str] | None = None) -> dict[str,
             "MCP_AUDIENCE": mcp_audience,
             "API_SCOPE": api_scope,
             "A2A_SCOPE": a2a_scope,
-            "BANKING_SCOPE": banking_scope,
+            "BANKING_SCOPE": banking_scope_names,
             "API_AUTHORIZED_CLIENT": api_client,
             "A2A_AUTHORIZED_CLIENT": a2a_client,
             "MCP_AUTHORIZED_CLIENT": mcp_client,
             "BANKING_TEST_USER_OID": banking_user_oid,
+            "BANKING_ACCOUNT_OWNERS_JSON": banking_account_owners_json,
             "BANKING_ISSUER": issuer,
             "BANKING_AUDIENCE": mcp_audience,
             "BANKING_AUTHORIZED_CLIENT": mcp_client,
@@ -275,7 +319,8 @@ def _compose_live_runtime_env(config: dict[str, str] | None = None) -> dict[str,
             "ENTRA_AGENT_A_CLIENT_SECRET_FILE": agent_a_secret_file,
             "ENTRA_AGENT_B_SCOPE": _require("ENTRA_AGENT_B_SCOPE"),
             "ENTRA_AGENT_B_CLIENT_ID": mcp_client,
-            "ENTRA_BANKING_SCOPE": _require("ENTRA_BANKING_SCOPE"),
+            "ENTRA_BANKING_SCOPE": banking_scope_values[0],
+            "ENTRA_BANKING_SCOPES": " ".join(banking_scope_values),
             "ENTRA_AGENT_B_CLIENT_SECRET_FILE": agent_b_secret_file,
         }
     )
@@ -335,6 +380,31 @@ def _extract_user_oid(token: str) -> str:
     if not oid:
         raise RuntimeError("Validated Token A did not include an object ID for account ownership checks.")
     return oid
+
+
+def _token_roles(token: str) -> set[str]:
+    """Read roles only after the caller has completed cryptographic token validation."""
+    try:
+        claims = jwt.decode(
+            token,
+            options={"verify_signature": False, "verify_aud": False, "verify_exp": False, "verify_iss": False},
+        )
+    except Exception as exc:  # pragma: no cover - live-only operational path
+        raise RuntimeError("Unable to inspect validated Token C roles.") from exc
+    roles = claims.get("roles")
+    if not isinstance(roles, list) or not all(isinstance(role, str) for role in roles):
+        return set()
+    return set(roles)
+
+
+def _require_token_roles(token: str, *, required: set[str], forbidden: set[str] | None = None) -> None:
+    roles = _token_roles(token)
+    missing = required - roles
+    forbidden_present = (forbidden or set()).intersection(roles)
+    if missing:
+        raise RuntimeError(f"Validated Token C is missing required app role(s): {', '.join(sorted(missing))}")
+    if forbidden_present:
+        raise RuntimeError(f"Validated Token C contains forbidden app role(s): {', '.join(sorted(forbidden_present))}")
 
 
 def _call_mcp_summary(mcp_url: str, token_c: str, account_id: str) -> str:
@@ -460,7 +530,7 @@ def run_live_unified_validation() -> int:
             config["ENTRA_AGENT_A_CLIENT_ID"],
             agent_a_client_secret,
             user_assertion=token_a,
-            scope=config["ENTRA_AGENT_B_SCOPE"],
+            scopes=[config["ENTRA_AGENT_B_SCOPE"]],
         )
         expected_agent_b_scope = extract_delegated_scope_name(config["ENTRA_AGENT_B_SCOPE"])
         _validate_token(
@@ -497,22 +567,31 @@ def run_live_unified_validation() -> int:
         if status != 200:
             raise RuntimeError(f"Unified A2A gateway rejected Token B: {status} {body}")
 
+        banking_scopes = tuple(
+            dict.fromkeys(
+                part
+                for chunk in config["ENTRA_BANKING_SCOPES"].split(",")
+                for part in chunk.split()
+                if part
+            )
+        )
         token_c = _acquire_obo_token(
             config["ENTRA_TENANT_ID"],
             config["ENTRA_AGENT_B_CLIENT_ID"],
             client_secret,
             user_assertion=token_b,
-            scope=config["ENTRA_BANKING_SCOPE"],
+            scopes=list(banking_scopes),
         )
-        expected_banking_scope = extract_delegated_scope_name(config["ENTRA_BANKING_SCOPE"])
-        _validate_token(
-            config,
-            token_c,
-            expected_scope=expected_banking_scope,
-            expected_audience=config["ENTRA_BANKING_EXPECTED_AUDIENCE"],
-            expected_client=config["ENTRA_AGENT_B_CLIENT_ID"],
-            name="banking_token_c",
-        )
+        for banking_scope in banking_scopes:
+            _validate_token(
+                config,
+                token_c,
+                expected_scope=extract_delegated_scope_name(banking_scope),
+                expected_audience=config["ENTRA_BANKING_EXPECTED_AUDIENCE"],
+                expected_client=config["ENTRA_AGENT_B_CLIENT_ID"],
+                name="banking_token_c",
+            )
+        _require_token_roles(token_c, required={"Banking.Reader"})
         if os.getenv("POC_LOG_RAW_USER_ID") == "true":
             print(json.dumps({"event": "token_c.identity.debug", **extract_raw_user_identity(token=token_c)}, separators=(",", ":")))
 
@@ -541,10 +620,27 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.start_only:
             config = _require_config()
-            if not (os.getenv("BANKING_TEST_USER_OID") or "").strip():
-                raise RuntimeError("BANKING_TEST_USER_OID must be set for the persistent notebook stack.")
             config = dict(config)
-            config["BANKING_TEST_USER_OID"] = os.environ["BANKING_TEST_USER_OID"].strip()
+            account_owners = (os.getenv("BANKING_ACCOUNT_OWNERS_JSON") or "").strip()
+            legacy_owner = (os.getenv("BANKING_TEST_USER_OID") or "").strip()
+            if not account_owners and not legacy_owner:
+                raise RuntimeError(
+                    "BANKING_ACCOUNT_OWNERS_JSON (Slice 5C) or BANKING_TEST_USER_OID (legacy read-only) "
+                    "must be set for the persistent notebook stack."
+                )
+            if account_owners:
+                try:
+                    parsed_owners = json.loads(account_owners)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError("BANKING_ACCOUNT_OWNERS_JSON must be a valid JSON object.") from exc
+                if not isinstance(parsed_owners, dict) or not parsed_owners or not all(
+                    isinstance(account, str) and account.strip() and isinstance(owner, str) and owner.strip()
+                    for account, owner in parsed_owners.items()
+                ):
+                    raise RuntimeError("BANKING_ACCOUNT_OWNERS_JSON must map account IDs to non-empty Entra object IDs.")
+                config["BANKING_ACCOUNT_OWNERS_JSON"] = account_owners
+            else:
+                config["BANKING_TEST_USER_OID"] = legacy_owner
             _start_live_stack(config=config)
             print("PHASE_5_STACK_STATUS: RUNNING")
             print(f"PHASE_5_STACK_API: http://127.0.0.1:{os.getenv('API_HOST_PORT', '18080')}")

@@ -201,6 +201,7 @@ def build_token(
     issuer: str,
     authorized_client: str,
     subject: str,
+    roles: list[str] | None = None,
     version: str = "2.0",
     expired: bool = False,
     expiration_offset: int | None = None,
@@ -222,6 +223,7 @@ def build_token(
         "nbf": now - 60,
         "exp": now + 3600,
         "ver": version,
+        "roles": list(roles if roles is not None else ["Banking.Reader", "Banking.Writer"]),
     }
     if version == "2.0":
         payload["azp"] = authorized_client
@@ -493,6 +495,187 @@ def test_solo_agentgateway_mcp_scopes_filter_tool_discovery_and_direct_calls(mcp
     assert "get_account_summary" in [tool["name"] for tool in list_body["result"]["tools"]]
     assert after["tool_calls_total"] == before["tool_calls_total"]
     assert after["transfer_attempts_total"] == before["transfer_attempts_total"]
+    assert after["transfer_mutations_total"] == before["transfer_mutations_total"]
+
+
+def test_solo_agentgateway_mcp_roles_filter_reader_and_writer_tools(mcp_stack: dict[str, object]):
+    gateway_url = mcp_stack["gateway_url"]
+    reader_token = build_token(
+        mcp_stack["private_key"],
+        tenant_id=mcp_stack["tenant_id"],
+        audience=mcp_stack["audience"],
+        scope="Banking.Read Banking.Write",
+        issuer=mcp_stack["issuer"],
+        authorized_client=mcp_stack["authorized_client"],
+        subject=mcp_stack["subject"],
+        roles=["Banking.Reader"],
+    )
+    writer_token = build_token(
+        mcp_stack["private_key"],
+        tenant_id=mcp_stack["tenant_id"],
+        audience=mcp_stack["audience"],
+        scope="Banking.Read Banking.Write",
+        issuer=mcp_stack["issuer"],
+        authorized_client=mcp_stack["authorized_client"],
+        subject=mcp_stack["subject"],
+        roles=["Banking.Reader", "Banking.Writer"],
+    )
+
+    reader_status, reader_body = request_json(
+        f"{gateway_url}mcp",
+        token=reader_token,
+        payload={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": "reader-tools"},
+    )
+    assert reader_status == 200
+    assert [tool["name"] for tool in reader_body["result"]["tools"]] == ["get_account_summary"]
+
+    before = read_backend_debug_state(mcp_stack["env"])
+    denied_status, denied_body = request_json(
+        f"{gateway_url}mcp",
+        token=reader_token,
+        payload={
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": "create_transfer",
+                "arguments": {
+                    "from_account": "acct-1001",
+                    "to_account": "acct-2002",
+                    "amount": 25.0,
+                    "confirmation": "yes",
+                },
+            },
+            "id": "reader-write-denied",
+        },
+        extra_headers={"X-Idempotency-Key": unique_idempotency_key("reader-denied")},
+    )
+    after = read_backend_debug_state(mcp_stack["env"])
+    assert denied_status == 400
+    assert denied_body["error"]["code"] == -32602
+    assert after["tool_calls_total"] == before["tool_calls_total"]
+    assert after["transfer_mutations_total"] == before["transfer_mutations_total"]
+
+    writer_status, writer_body = request_json(
+        f"{gateway_url}mcp",
+        token=writer_token,
+        payload={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": "writer-tools"},
+    )
+    assert writer_status == 200
+    assert [tool["name"] for tool in writer_body["result"]["tools"]] == [
+        "get_account_summary",
+        "create_transfer",
+    ]
+
+
+def test_solo_agentgateway_mcp_missing_roles_fail_closed_without_mutation(mcp_stack: dict[str, object]):
+    token_without_roles = build_token(
+        mcp_stack["private_key"],
+        tenant_id=mcp_stack["tenant_id"],
+        audience=mcp_stack["audience"],
+        scope="Banking.Read Banking.Write",
+        issuer=mcp_stack["issuer"],
+        authorized_client=mcp_stack["authorized_client"],
+        subject=mcp_stack["subject"],
+        roles=[],
+    )
+    before = read_backend_debug_state(mcp_stack["env"])
+    status, body = request_json(
+        f"{mcp_stack['gateway_url']}mcp",
+        token=token_without_roles,
+        payload={
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": "create_transfer",
+                "arguments": {
+                    "from_account": "acct-1001",
+                    "to_account": "acct-2002",
+                    "amount": 25.0,
+                    "confirmation": "yes",
+                },
+            },
+            "id": "missing-role-denied",
+        },
+        extra_headers={"X-Idempotency-Key": unique_idempotency_key("missing-role")},
+    )
+    after = read_backend_debug_state(mcp_stack["env"])
+    assert status == 400
+    assert body["error"]["code"] == -32602
+    assert after["tool_calls_total"] == before["tool_calls_total"]
+    assert after["transfer_mutations_total"] == before["transfer_mutations_total"]
+
+
+def test_solo_agentgateway_mcp_two_users_cannot_cross_account_boundaries(mcp_stack: dict[str, object]):
+    gateway_url = mcp_stack["gateway_url"]
+    reader_token = build_token(
+        mcp_stack["private_key"],
+        tenant_id=mcp_stack["tenant_id"],
+        audience=mcp_stack["audience"],
+        scope="Banking.Read Banking.Write",
+        issuer=mcp_stack["issuer"],
+        authorized_client=mcp_stack["authorized_client"],
+        subject="user-67890",
+        roles=["Banking.Reader"],
+    )
+    read_status, read_body = request_json(
+        f"{gateway_url}mcp",
+        token=reader_token,
+        payload={
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": "get_account_summary", "arguments": {"account_id": "acct-9000"}},
+            "id": "reader-owned-account",
+        },
+    )
+    assert read_status == 200
+    assert read_body["result"]["structuredContent"]["account_id"] == "acct-9000"
+
+    denied_read_status, denied_read_body = request_json(
+        f"{gateway_url}mcp",
+        token=reader_token,
+        payload={
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": "get_account_summary", "arguments": {"account_id": "acct-1001"}},
+            "id": "reader-cross-account-denied",
+        },
+    )
+    assert denied_read_status == 403
+    assert denied_read_body["error"]["code"] == -32007
+
+    writer_token = build_token(
+        mcp_stack["private_key"],
+        tenant_id=mcp_stack["tenant_id"],
+        audience=mcp_stack["audience"],
+        scope="Banking.Read Banking.Write",
+        issuer=mcp_stack["issuer"],
+        authorized_client=mcp_stack["authorized_client"],
+        subject="user-12345",
+        roles=["Banking.Reader", "Banking.Writer"],
+    )
+    before = read_backend_debug_state(mcp_stack["env"])
+    denied_write_status, denied_write_body = request_json(
+        f"{gateway_url}mcp",
+        token=writer_token,
+        payload={
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": "create_transfer",
+                "arguments": {
+                    "from_account": "acct-1001",
+                    "to_account": "acct-9000",
+                    "amount": 25.0,
+                    "confirmation": "yes",
+                },
+            },
+            "id": "writer-cross-account-denied",
+        },
+        extra_headers={"X-Idempotency-Key": unique_idempotency_key("cross-account")},
+    )
+    after = read_backend_debug_state(mcp_stack["env"])
+    assert denied_write_status == 403
+    assert denied_write_body["error"]["code"] == -32010
     assert after["transfer_mutations_total"] == before["transfer_mutations_total"]
 
 

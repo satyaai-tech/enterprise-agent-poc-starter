@@ -118,7 +118,7 @@ def test_agent_b_mcp_client_uses_proven_request_sequence_and_session_reuse(monke
     asyncio.run(_run())
 
 
-def test_agent_b_mcp_client_requires_get_account_summary_and_rejects_create_transfer(monkeypatch, tmp_path):
+def test_agent_b_mcp_client_reader_call_tolerates_writer_tool_when_authorized(monkeypatch, tmp_path):
     async def _run():
         token_path = tmp_path / "token-c.txt"
         token_path.write_text("token-c\n", encoding="utf-8")
@@ -129,14 +129,89 @@ def test_agent_b_mcp_client_requires_get_account_summary_and_rejects_create_tran
             FakeResponse(headers={"Mcp-Session-Id": "sess-xyz"}, text=_sse_body({"jsonrpc": "2.0", "result": {"protocolVersion": "2025-03-26"}})),
             FakeResponse(status_code=202, text=""),
             FakeResponse(text=_sse_body({"jsonrpc": "2.0", "result": {"tools": [{"name": "create_transfer"}, {"name": "get_account_summary"}]}})),
+            FakeResponse(text=_sse_body({"jsonrpc": "2.0", "result": {"content": [{"type": "text", "text": "Balance for acct-1001 is 12345.67"}]}})),
         ]
         fake_client = FakeAsyncClient(responses)
         monkeypatch.setattr(mcp_client.httpx, "AsyncClient", lambda *args, **kwargs: fake_client)
 
-        with pytest.raises(ValueError, match="create_transfer|get_account_summary"):
-            await mcp_client.get_account_summary("acct-1001")
+        result = await mcp_client.get_account_summary("acct-1001")
+        assert result == "Balance for acct-1001 is 12345.67"
 
     asyncio.run(_run())
+
+
+def test_agent_b_mcp_client_create_transfer_requires_discovery_and_idempotency_header(monkeypatch, tmp_path):
+    async def _run():
+        token_path = tmp_path / "token-c.txt"
+        token_path.write_text("token-c\n", encoding="utf-8")
+        monkeypatch.setenv("TOKEN_C_FILE", str(token_path))
+        set_flow_id("flow-transfer-1")
+        responses = [
+            FakeResponse(headers={"Mcp-Session-Id": "sess-transfer"}, text=_sse_body({"jsonrpc": "2.0", "result": {"protocolVersion": "2025-03-26"}})),
+            FakeResponse(status_code=202, text=""),
+            FakeResponse(text=_sse_body({"jsonrpc": "2.0", "result": {"tools": [{"name": "get_account_summary"}, {"name": "create_transfer"}]}})),
+            FakeResponse(text=_sse_body({"jsonrpc": "2.0", "result": {"content": [{"type": "text", "text": "Transfer created for acct-2002 amount 25.00"}], "structuredContent": {"transfer_id": "txn-0001", "status": "created"}}})),
+        ]
+        fake_client = FakeAsyncClient(responses)
+        monkeypatch.setattr(mcp_client.httpx, "AsyncClient", lambda *args, **kwargs: fake_client)
+
+        result = await mcp_client.create_transfer(
+            "acct-1001",
+            "acct-2002",
+            25.0,
+            "yes",
+            "transfer-key-1",
+        )
+
+        assert result == "Transfer created for acct-2002 amount 25.00"
+        call = fake_client.calls[-1]
+        assert call["json"]["params"] == {
+            "name": "create_transfer",
+            "arguments": {
+                "from_account": "acct-1001",
+                "to_account": "acct-2002",
+                "amount": 25.0,
+                "confirmation": "yes",
+            },
+        }
+        assert call["headers"]["X-Idempotency-Key"] == "transfer-key-1"
+        assert call["headers"]["Mcp-Session-Id"] == "sess-transfer"
+        assert call["headers"]["X-Flow-ID"] == "flow-transfer-1"
+
+    asyncio.run(_run())
+
+
+@pytest.mark.parametrize(
+    ("amount", "confirmation", "idempotency_key", "message"),
+    [
+        (0.0, "yes", "key-1", "greater than zero"),
+        (-1.0, "yes", "key-1", "greater than zero"),
+        (10.0, "no", "key-1", "explicit confirmation"),
+        (10.0, "yes", "", "idempotency_key"),
+    ],
+)
+def test_agent_b_mcp_client_rejects_invalid_transfer_before_network(
+    monkeypatch,
+    amount,
+    confirmation,
+    idempotency_key,
+    message,
+):
+    monkeypatch.setattr(
+        mcp_client,
+        "resolve_agent_b_token_c",
+        lambda: pytest.fail("Token C must not be resolved for an invalid transfer"),
+    )
+    with pytest.raises(ValueError, match=message):
+        asyncio.run(
+            mcp_client.create_transfer(
+                "acct-1001",
+                "acct-2002",
+                amount,
+                confirmation,
+                idempotency_key,
+            )
+        )
 
 
 def test_agent_b_mcp_client_fails_closed_on_initialize_error_even_with_session_header(monkeypatch, tmp_path):
@@ -287,3 +362,58 @@ def test_agent_b_mcp_client_does_not_log_tokens_or_account_data(monkeypatch, tmp
         assert "flow-47" in payload
 
     asyncio.run(_run())
+
+
+def _denial_session(monkeypatch, tmp_path, *, tools, call_response=None):
+    token_path = tmp_path / "token-c.txt"
+    token_path.write_text("token-c-secret\n", encoding="utf-8")
+    monkeypatch.setenv("TOKEN_C_FILE", str(token_path))
+    set_flow_id("flow-denied")
+    responses = [
+        FakeResponse(headers={"Mcp-Session-Id": "sess-d"}, text=_sse_body({"jsonrpc": "2.0", "result": {"protocolVersion": "2025-03-26"}})),
+        FakeResponse(status_code=202, text=""),
+        FakeResponse(text=_sse_body({"jsonrpc": "2.0", "result": {"tools": [{"name": name} for name in tools]}})),
+    ]
+    if call_response is not None:
+        responses.append(call_response)
+    fake_client = FakeAsyncClient(responses)
+    monkeypatch.setattr(mcp_client.httpx, "AsyncClient", lambda *args, **kwargs: fake_client)
+    monkeypatch.setattr(mcp_client, "log_flow_event", lambda *args, **kwargs: None)
+    return fake_client
+
+
+def test_transfer_not_listed_for_reader_returns_role_denial_without_calling_tool(monkeypatch, tmp_path):
+    fake_client = _denial_session(monkeypatch, tmp_path, tools=["get_account_summary"])
+
+    result = asyncio.run(mcp_client.create_transfer("acct-1001", "acct-2002", 25.0, "yes", "key-1"))
+
+    assert result.startswith("ACCESS_DENIED | role | Your role is not allowed to make transfers.")
+    assert "tools/list" in result
+    assert [call["json"]["method"] for call in fake_client.calls] == ["initialize", "notifications/initialized", "tools/list"]
+    assert "token-c-secret" not in result and "acct-" not in result
+
+
+def test_banking_403_on_tool_call_returns_policy_denial(monkeypatch, tmp_path):
+    _denial_session(
+        monkeypatch,
+        tmp_path,
+        tools=["get_account_summary"],
+        call_response=FakeResponse(status_code=403, text="forbidden"),
+    )
+
+    result = asyncio.run(mcp_client.get_account_summary("acct-1001"))
+
+    assert result.startswith("ACCESS_DENIED | policy | You can only view accounts that you own.")
+    assert "HTTP 403" in result and "token-c-secret" not in result and "acct-" not in result
+
+
+def test_non_403_tool_call_failure_still_raises(monkeypatch, tmp_path):
+    _denial_session(
+        monkeypatch,
+        tmp_path,
+        tools=["get_account_summary"],
+        call_response=FakeResponse(status_code=500, text="boom"),
+    )
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        asyncio.run(mcp_client.get_account_summary("acct-1001"))
